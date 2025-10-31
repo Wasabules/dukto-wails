@@ -359,6 +359,10 @@ void AndroidContentWriter::close() {
 
 /*============================================================*/
 
+#define FLAG_GRANT_READ_URI_PERMISSION          1
+#define FLAG_GRANT_WRITE_URI_PERMISSION         2
+#define FLAG_GRANT_PERSISTABLE_URI_PERMISSION   64
+
 QString AndroidStorage::dirMimeType = QStringLiteral("vnd.android.document/directory");
 
 QJniObject AndroidStorage::parseUri(const QString &uriString) {
@@ -403,18 +407,13 @@ bool AndroidStorage::hasUriPermission(const QJniObject &uri, bool writable) {
 }
 
 void AndroidStorage::grantUriPermission(const QJniObject &uri, bool writable) {
-    // 1  = Intent.FLAG_GRANT_READ_URI_PERMISSION
-    // 2  = Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-    // 64 = Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-    getContext().callMethod<void>("grantUriPermission", "(Ljava/lang/String;Landroid/net/Uri;I)V", QJniObject::fromString(getPackageName()).object<jstring>(), uri.object(), (writable ? (1 | 2 | 64) : (1 | 64)));
-    getContentResolver().callMethod<void>("takePersistableUriPermission", "(Landroid/net/Uri;I)V", uri.object(), (writable ? (1 | 2) : 1));
+    getContext().callMethod<void>("grantUriPermission", "(Ljava/lang/String;Landroid/net/Uri;I)V", QJniObject::fromString(getPackageName()).object<jstring>(), uri.object(), (writable ? (FLAG_GRANT_READ_URI_PERMISSION | FLAG_GRANT_WRITE_URI_PERMISSION | FLAG_GRANT_PERSISTABLE_URI_PERMISSION) : (FLAG_GRANT_READ_URI_PERMISSION | FLAG_GRANT_PERSISTABLE_URI_PERMISSION)));
+    getContentResolver().callMethod<void>("takePersistableUriPermission", "(Landroid/net/Uri;I)V", uri.object(), (writable ? (FLAG_GRANT_READ_URI_PERMISSION | FLAG_GRANT_WRITE_URI_PERMISSION) : FLAG_GRANT_READ_URI_PERMISSION));
     clearExceptions();
 }
 
 void AndroidStorage::revokeUriPermission(const QJniObject &uri) {
-    // 1  = Intent.FLAG_GRANT_READ_URI_PERMISSION
-    // 2  = Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-    getContentResolver().callMethod<void>("releasePersistableUriPermission", "(Landroid/net/Uri;I)V", uri.object(), 1 | 2);
+    getContentResolver().callMethod<void>("releasePersistableUriPermission", "(Landroid/net/Uri;I)V", uri.object(), FLAG_GRANT_READ_URI_PERMISSION | FLAG_GRANT_WRITE_URI_PERMISSION);
     clearExceptions();
 }
 
