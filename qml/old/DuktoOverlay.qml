@@ -19,7 +19,7 @@
 import QtQuick 2.3
 
 Rectangle {
-    color: "#00000000"
+    color: "transparent"
     state: guiBehind.showTermsOnStart ? "termspage" : (guiBehind.initError !== "" ? "initerr" : "")
 
     function refreshSettingsColor() {
@@ -30,7 +30,7 @@ Rectangle {
     Rectangle {
         id: disabler
         anchors.fill: parent
-        color: "#ccffffff"
+        color: guiBehind.darkMode ? "#333333" : "#ffffff"
         opacity: 0
         visible: false
 
@@ -153,7 +153,7 @@ Rectangle {
             }
             PropertyChanges {
                 target: disabler
-                opacity: 1
+                opacity: 0.8
                 visible: true
             }
         },
@@ -166,7 +166,7 @@ Rectangle {
             }
             PropertyChanges {
                 target: disabler
-                opacity: 1
+                opacity: 0.8
                 visible: true
             }
         },
@@ -203,7 +203,7 @@ Rectangle {
             }
             PropertyChanges {
                 target: disabler
-                opacity: 1
+                opacity: 0.8
                 visible: true
             }
         },
@@ -224,7 +224,7 @@ Rectangle {
             }
             PropertyChanges {
                 target: disabler
-                opacity: 1
+                opacity: 0.8
                 visible: true
             }
         },
@@ -237,7 +237,7 @@ Rectangle {
             }
             PropertyChanges {
                 target: disabler
-                opacity: 1
+                opacity: 0.8
                 visible: true
             }
         }

@@ -39,7 +39,7 @@ Flickable {
             anchors.leftMargin: 3
             width: 64
             height: 64
-            color: theme.mainColor
+            color: theme.themeColor
             Image {
                 source: "TileGradient.png"
                 anchors.fill: parent
@@ -58,7 +58,7 @@ Flickable {
             font.pixelSize: 36
             scale: 1
             text: "Dukto"
-            color: "#555555"
+            color: theme.textColor
         }
         SText {
             anchors.left: name.right
@@ -67,7 +67,7 @@ Flickable {
             anchors.bottomMargin: 1
             font.pixelSize: 32
             text: guiBehind.version()
-            color: "#555555"
+            color: theme.textColor
         }
 
         SmoothText {
@@ -78,8 +78,8 @@ Flickable {
             font.pixelSize: 18
             scale: 1
             text: "Website: <a href=\"https://github.com/xuzhen/dukto-qt5/\">Source Code Repository</a>"
-            color: "#555555"
-            linkColor: theme.mainColor
+            color: theme.textColor
+            linkColor: theme.themeColor
             Connections {
                 function onLinkActivated(link) {
                     Qt.openUrlExternally(link)
@@ -95,7 +95,7 @@ Flickable {
             font.pixelSize: 18
             scale: 1
             text: "Created by:"
-            color: "#555555"
+            color: theme.textColor
         }
         SmoothText {
             id: authors
@@ -107,8 +107,8 @@ Flickable {
             lineHeight: 1.2
             scale: 1
             text: "2009-2013 © <a href=\"https://www.msec.it/blog/dukto/\">Emanuele Colombo</a><br>2015-2015 © <a href=\"https://github.com/arthurzam/\">Arthur Zamarin</a><br>2015-2021 © <a href=\"https://github.com/maz-1/\">maz-1</a><br>2021-2025 © <a href=\"https://github.com/xuzhen/\">Xu Zhen</a>"
-            color: "#555555"
-            linkColor: theme.mainColor
+            color: theme.textColor
+            linkColor: theme.themeColor
             Connections {
                 function onLinkActivated(link) {
                     Qt.openUrlExternally(link)

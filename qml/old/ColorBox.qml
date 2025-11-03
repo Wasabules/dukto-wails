@@ -21,7 +21,7 @@ import QtQuick 2.3
 Rectangle {
     id: root
     height: width
-    border.color: boxArea.containsMouse ? "#555555" : "#f0f0f0"
+    border.color: boxArea.containsMouse ? theme.dimmedTextColor : theme.borderColor
     border.width: 2
     clip: true
 

@@ -47,14 +47,14 @@ Flipable {
 
    Rectangle {
        anchors.fill: parent
-       color: "#00000000"
+       color: "transparent"
        visible: buddyIp !== "-" && buddyMouseArea.containsMouse;
        Rectangle {
            anchors.right: parent.right
            anchors.top: parent.top
            height: 64
            width: 5
-           color: theme.lighterColor
+           color: theme.themeLighterColor
        }
    }
 
@@ -69,7 +69,7 @@ Flipable {
 
            front: Rectangle {
                anchors.fill: parent
-               color: theme.mainColor
+               color: theme.themeColor
                Image {
                    anchors.fill: parent
                    source: "TileGradient.png"
@@ -90,7 +90,7 @@ Flipable {
 
            back: Rectangle {
                anchors.fill: parent
-               color: theme.mainColor
+               color: theme.themeColor
                Image {
                    anchors.fill: parent
                    source: "TileGradient.png"
@@ -137,7 +137,7 @@ Flipable {
            anchors.rightMargin: 20
            font.pixelSize: 16
            elide: Text.ElideRight
-           color: "#555555"
+           color: theme.textColor
        }
        SText {
            id: buddySystemText
@@ -149,7 +149,7 @@ Flipable {
            anchors.rightMargin: 20
            font.pixelSize: 14
            elide: Text.ElideRight
-           color: "#555555"
+           color: theme.textColor
        }
    }
 
@@ -170,7 +170,7 @@ Flipable {
    }
 
    Rectangle {
-       color: theme.mainColor
+       color: theme.themeColor
        x: 40
        width: parent.width - 80
        height: 1

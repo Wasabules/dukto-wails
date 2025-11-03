@@ -35,8 +35,8 @@ Flickable {
         anchors.top: parent.top
         font.pixelSize: 160
         text: ":-("
-        color: "#555555"
-        visible: (recentList.count == 0)
+        color: theme.textColor
+        visible: (recentList.count === 0)
     }
 
     SText  {
@@ -46,9 +46,9 @@ Flickable {
         anchors.left: parent.left
         anchors.leftMargin: 40
         font.pixelSize: 17
-        color: "#555555"
+        color: theme.textColor
         text: "Sorry, no data has been\nreceived yet..."
-        visible: (recentList.count == 0)
+        visible: (recentList.count === 0)
     }
 
     ListView {
@@ -82,14 +82,14 @@ Flickable {
 
                  Rectangle {
                      anchors.fill: parent
-                     color: "#00000000"
+                     color: "transparent"
                      visible: recentMouseArea.containsMouse;
                      Rectangle {
                          anchors.right: parent.right
                          anchors.top: parent.top
                          anchors.bottom: parent.bottom
                          width: 5
-                         color: theme.lighterColor
+                         color: theme.themeLighterColor
                      }
                  }
 
@@ -98,7 +98,7 @@ Flickable {
                      anchors.verticalCenter: parent.verticalCenter
                      width: 32
                      height: 32
-                     color: theme.mainColor
+                     color: theme.themeColor
                      Image {
                          source: typeIcon
                          width: 32
@@ -114,7 +114,7 @@ Flickable {
                      anchors.right: parent.right
                      anchors.rightMargin: 20
                      font.pixelSize: 14
-                     color: "#555555"
+                     color: theme.textColor
                      elide: Text.ElideRight
                      text: name
                  }
@@ -127,7 +127,7 @@ Flickable {
                      anchors.bottomMargin: -1
                      font.pixelSize: 12
                      elide: Text.ElideRight
-                     color: "#888888"
+                     color: theme.dimmedTextColor
                      text: "from " + sender + ", " + dateTime
                  }
              }

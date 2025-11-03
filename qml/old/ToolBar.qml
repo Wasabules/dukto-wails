@@ -41,7 +41,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         height: 50
-        color: theme.mainColor
+        color: theme.themeColor
 
         Behavior on height { NumberAnimation { duration: 200; easing.type: "OutCubic" } }
 
@@ -148,7 +148,7 @@ Item {
             cursorShape: containsMouse ? Qt.PointingHandCursor : Qt.ArrowCursor
 
             onClicked: {
-               if (toolBar.state == "WithoutLabels")
+               if (toolBar.state === "WithoutLabels")
                    toolBar.state = "WithLabels";
                else
                    toolBar.state = "WithoutLabels";

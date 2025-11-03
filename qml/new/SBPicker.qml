@@ -35,7 +35,7 @@ Item {
             GradientStop { position: 0.0; color: "#FFFFFF" }
             GradientStop { position: 1.0; color: root.hueColor }
         }
-        border.color: "#f0f0f0"
+        border.color: theme.borderColor
         border.width: 2
     }
     Rectangle {

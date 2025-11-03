@@ -20,7 +20,7 @@ import QtQuick 2.3
 
 Rectangle {
     id: ipPage
-    color: "#00000000"
+    color: "transparent"
 
     signal back()
 
@@ -36,7 +36,7 @@ Rectangle {
 
         Rectangle {
             id: backRecangle
-            color: theme.mainColor
+            color: theme.themeColor
             anchors.left: parent.left
             anchors.top: parent.top
             anchors.bottom: parent.bottom

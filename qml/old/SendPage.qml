@@ -34,7 +34,7 @@ Flickable {
     }
 
     Rectangle {
-        color: "#ffffff"
+        color: theme.bgColor
         height: sendPage.height + sendPage.contentY
         width: sendPage.width
 
@@ -67,7 +67,7 @@ Flickable {
             anchors.topMargin: 5
             font.pixelSize: 64
             text: "Send data to"
-            color: theme.lighterColor
+            color: theme.themeLighterColor
         }
 
         BuddyListElement {
@@ -113,9 +113,10 @@ Flickable {
             anchors.bottomMargin: 5
             anchors.leftMargin: 74
             anchors.rightMargin: 24
-            border.color: "#888888"
+            border.color: theme.themeColor
             border.width: 2
             height: 25
+            color: theme.bgColor
 
             TextInput {
                 id: destinationText
@@ -124,7 +125,7 @@ Flickable {
                 readOnly: false
                 smooth: true
                 font.pixelSize: 14
-                color: "#888888"
+                color: theme.textColor
                 selectByMouse: true
                 focus: true
                 text: guiBehind.remoteDestinationAddress
@@ -168,7 +169,7 @@ Flickable {
             anchors.top: localBuddy.bottom
             anchors.topMargin: 35
             font.pixelSize: 17
-            color: "#555555"
+            color: theme.textColor
             text: "What do you want to do?"
         }
 
@@ -237,7 +238,7 @@ Flickable {
             anchors.topMargin: 20
             wrapMode: Text.Wrap
             font.pixelSize: 14
-            color: "#888888"
+            color: theme.dimmedTextColor
             text: "Or simply drag & drop some files and folders over this window to send them to your buddy."
         }
     }

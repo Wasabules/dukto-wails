@@ -26,7 +26,7 @@ Item {
         anchors.right: parent.right
         anchors.left: parent.left
         anchors.top: parent.top
-        color: "#888888"
+        color: theme.dimmedTextColor
         wrapMode: Text.WordWrap
         text: "Refresh Buddies"
         horizontalAlignment: Text.AlignHCenter

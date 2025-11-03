@@ -22,9 +22,9 @@ Rectangle {
     id: button
     width: 150
     height: 30
-    border.color: buttonEnabled ? "#ffffff" : "#cccccc"
+    border.color: buttonEnabled ? theme.themeBgColor : theme.disabledColor
     border.width: 2
-    color: buttonArea.containsMouse ? (buttonArea.pressed ? "#cccccc" : "#eeeeee") : "#00000000"
+    color: buttonArea.containsMouse ? (buttonArea.pressed ? theme.themeDarkerColor : theme.themeLighterColor) : theme.themeColor
     clip: true
 
     property bool buttonEnabled: true
@@ -34,7 +34,7 @@ Rectangle {
     SText {
         id: textLabel
         anchors.fill: parent
-        color: buttonEnabled ? (buttonArea.containsMouse ? theme.mainColor : "#ffffff") : "#cccccc"
+        color: buttonEnabled ? theme.themeTextColor : theme.disabledColor
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
         font.pixelSize: 12
@@ -45,6 +45,7 @@ Rectangle {
         anchors.fill: parent
         hoverEnabled: true
         enabled: button.buttonEnabled
+        cursorShape: containsMouse ? Qt.PointingHandCursor : Qt.ForbiddenCursor
         onClicked: button.clicked();
     }
 }

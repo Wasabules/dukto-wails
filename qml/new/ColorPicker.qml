@@ -6,7 +6,7 @@ Rectangle {
     id: colorPicker
     property color colorValue: ColorUtils.hsba(hueSlider.value, sbPicker.saturation,
                                                sbPicker.brightness, 1)
-    color: "#FFFFFF"
+    color: theme.bgColor
 
     signal changed()
 
@@ -52,7 +52,7 @@ Rectangle {
                     GradientStop { position: 0.16; color: "#FF00FF" }
                     GradientStop { position: 0.0;  color: "#FF0000" }
                 }
-                border.color: "#f0f0f0"
+                border.color: theme.borderColor
                 border.width: 2
             }
             ColorSlider {

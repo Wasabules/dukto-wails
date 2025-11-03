@@ -24,21 +24,64 @@
 class Theme : public QObject
 {
     Q_OBJECT
+    // determined by theme color
+    Q_PROPERTY(QString themeColor READ themeColor NOTIFY themeColorChanged)
+    Q_PROPERTY(QString themeLighterColor READ themeLighterColor NOTIFY themeLighterColorChanged)
+    Q_PROPERTY(QString themeDarkerColor READ themeDarkerColor NOTIFY themeDarkerColorChanged)
+    Q_PROPERTY(QString themeTextColor READ themeTextColor NOTIFY themeTextColorChanged)
+    Q_PROPERTY(QString themeBgColor READ themeBgColor NOTIFY themeBgColorChanged)
 
-    Q_PROPERTY(QString mainColor READ mainColor NOTIFY mainColorChanged)
-    Q_PROPERTY(QString lighterColor READ lighterColor NOTIFY lighterColorChanged)
+    // determined by dark mode
+    Q_PROPERTY(QString textColor READ textColor NOTIFY textColorChanged)
+    Q_PROPERTY(QString dimmedTextColor READ dimmedTextColor NOTIFY dimmedTextColorChanged)
+    Q_PROPERTY(QString inactiveTextColor READ inactiveTextColor NOTIFY inactiveTextColorChanged)
+
+    Q_PROPERTY(QString bgColor READ bgColor NOTIFY bgColorChanged)
+    Q_PROPERTY(QString lighterBgColor READ lighterBgColor NOTIFY lighterBgColorChanged)
+    Q_PROPERTY(QString darkerBgColor READ darkerBgColor NOTIFY darkerBgColorChanged)
+
+    Q_PROPERTY(QString borderColor READ borderColor NOTIFY borderColorChanged)
+    Q_PROPERTY(QString disabledColor READ disabledColor NOTIFY disabledColorChanged)
 
 public:
     explicit Theme(QObject *parent = nullptr);
-    inline QString mainColor() { return mMainColor; }
-    inline QString lighterColor() { return mLighterColor; }
+    inline QString themeColor() { return mThemeColor; }
+    inline QString themeLighterColor() { return mThemeLighterColor; }
+    inline QString themeDarkerColor() { return mThemeDarkerColor; }
+    inline QString themeTextColor() { return mThemeTextColor; }
+    inline QString themeBgColor() { return mThemeBgColor; }
+
+    inline QString textColor() { return mTextColor; }
+    inline QString dimmedTextColor() { return mDimmedTextColor; }
+    inline QString inactiveTextColor() { return mInactiveTextColor; }
+    inline QString bgColor() { return mBgColor; }
+    inline QString lighterBgColor() { return mLighterBgColor; }
+    inline QString darkerBgColor() { return mDarkerBgColor; }
+    inline QString borderColor() { return mBorderColor; }
+    inline QString disabledColor() { return mDisabledColor; }
+
+    inline bool darkMode() { return mDarkMode; }
+    void setDarkMode(bool darkMode);
+
     void setThemeColor(const QString &color);
 
     static const QString DEFAULT_THEME_COLOR;
 
 signals:
-    void mainColorChanged();
-    void lighterColorChanged();
+    void themeColorChanged();
+    void themeLighterColorChanged();
+    void themeDarkerColorChanged();
+    void themeTextColorChanged();
+    void themeBgColorChanged();
+
+    void textColorChanged();
+    void dimmedTextColorChanged();
+    void inactiveTextColorChanged();
+    void bgColorChanged();
+    void lighterBgColorChanged();
+    void darkerBgColorChanged();
+    void borderColorChanged();
+    void disabledColorChanged();
 
 public slots:
     float getHue(const QString &color);
@@ -46,9 +89,21 @@ public slots:
     float getLightness(const QString &color);
 
 private:
-    QString mMainColor;
-    QString mLighterColor;
+    QString mThemeColor;
+    QString mThemeLighterColor;
+    QString mThemeDarkerColor;
+    QString mThemeTextColor;
+    QString mThemeBgColor;
 
+    QString mTextColor;
+    QString mDimmedTextColor;
+    QString mInactiveTextColor;
+    QString mBgColor;
+    QString mLighterBgColor;
+    QString mDarkerBgColor;
+    QString mBorderColor;
+    QString mDisabledColor;
+    bool mDarkMode = false;
 };
 
 #endif // THEME_H

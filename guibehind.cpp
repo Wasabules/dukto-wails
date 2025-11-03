@@ -80,6 +80,7 @@ GuiBehind::GuiBehind() : QObject(nullptr)
 
     // Set current theme color
     mTheme.setThemeColor(gSettings->themeColor());
+    mTheme.setDarkMode(gSettings->darkMode());
 
     // Register protocol signals
     connect(&mDuktoProtocol, &DuktoProtocol::peerListAdded, this, &GuiBehind::peerListAdded);
@@ -976,6 +977,16 @@ void GuiBehind::setCloseToTray(bool enabled) {
 
 bool GuiBehind::closeToTray() {
     return gSettings->closeToTrayEnabled();
+}
+
+void GuiBehind::setDarkMode(bool enabled) {
+    mTheme.setDarkMode(enabled);
+    gSettings->saveDarkMode(enabled);
+    emit darkModeChanged();
+}
+
+bool GuiBehind::darkMode() {
+    return mTheme.darkMode();
 }
 
 void GuiBehind::setInitError(const QString &error, const QString &action) {

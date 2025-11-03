@@ -22,9 +22,7 @@
 
 const QString Theme::DEFAULT_THEME_COLOR = "#248b00";
 
-Theme::Theme(QObject *parent) :
-    QObject(parent),
-    mMainColor(DEFAULT_THEME_COLOR), mLighterColor("#4cb328")
+Theme::Theme(QObject *parent) : QObject(parent)
 {
 }
 
@@ -36,14 +34,70 @@ void Theme::setThemeColor(const QString &color)
     QColor c;
     c.setNamedColor(color);
 #endif
-    c.setRed(qMin(c.red() + 40, 255));
-    c.setGreen(qMin(c.green() + 40, 255));
-    c.setBlue(qMin(c.blue() + 40, 255));
+    if (mThemeColor == c.name()) {
+        return;
+    }
+    int lightness = c.lightness();
+    QColor lc, dc;
+    if (lightness < 60) {
+        lc = c.lighter(180);
+    } else if (lightness <= 210) {
+        lc = c.lighter(120);
+    } else {
+        lc = c;
+    }
+    if (lightness >= 20) {
+        dc = c.darker(120);
+    } else {
+        dc = c;
+    }
+    mThemeColor = c.name();
+    mThemeLighterColor = lc.name();
+    mThemeDarkerColor = dc.name();
+    if (lightness >= 200) {
+        mThemeTextColor = "#555555";
+        mThemeBgColor = "#aaaaaa";
+    } else {
+        mThemeTextColor = "#fcfcfc";
+        mThemeBgColor = "#fcfcfc";
+    }
+    emit themeColorChanged();
+    emit themeLighterColorChanged();
+    emit themeDarkerColorChanged();
+    emit themeTextColorChanged();
+    emit themeBgColorChanged();
+}
 
-    mMainColor = color;
-    mLighterColor = c.name();
-    emit mainColorChanged();
-    emit lighterColorChanged();
+void Theme::setDarkMode(bool darkMode) {
+    if (darkMode) {
+        mTextColor = "#cccccc";
+        mDimmedTextColor = "#999999";
+        mBgColor = "#333333";
+        mLighterBgColor = "#444444";
+        mDarkerBgColor = "#222222";
+        mBorderColor = "#444444";
+        mDisabledColor = "#666666";
+        mInactiveTextColor = "#555555";
+    } else {
+        mTextColor = "#555555";
+        mDimmedTextColor = "#888888";
+        mBgColor = "#fcfcfc";
+        mLighterBgColor = "#eeeeee";
+        mDarkerBgColor = "#cccccc";
+        mBorderColor = "#d0d0d0";
+        mDisabledColor = "#cccccc";
+        mInactiveTextColor = "#bbbbbb";
+    }
+    mDarkMode = darkMode;
+
+    emit textColorChanged();
+    emit dimmedTextColorChanged();
+    emit bgColorChanged();
+    emit lighterBgColorChanged();
+    emit darkerBgColorChanged();
+    emit borderColorChanged();
+    emit inactiveTextColorChanged();
+    emit disabledColorChanged();
 }
 
 float Theme::getHue(const QString &color) {

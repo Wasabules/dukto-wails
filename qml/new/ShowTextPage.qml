@@ -20,7 +20,7 @@ import QtQuick 2.3
 
 Rectangle {
     id: showTextPage
-    color: "#ffffff"
+    color: theme.bgColor
 
     signal back()
     signal backOnSend()
@@ -64,7 +64,7 @@ Rectangle {
         anchors.topMargin: 5
         font.pixelSize: 64
         text: "Text snippet"
-        color: theme.lighterColor
+        color: theme.themeColor
     }
 
     SText {
@@ -78,13 +78,13 @@ Rectangle {
         elide: Text.ElideRight
         font.pixelSize: 16
         text: (guiBehind.textSnippetSending ? "to " : "from ") + guiBehind.textSnippetBuddy
-        color: "#888888"
+        color: theme.textColor
     }
 
 
     Rectangle {
         id: rectangleText
-        border.color: theme.lighterColor
+        border.color: theme.themeColor
         border.width: 1
         anchors.top: boxSender.bottom
         anchors.topMargin: 10
@@ -94,6 +94,7 @@ Rectangle {
         anchors.bottomMargin: 20
         anchors.right: parent.right
         anchors.rightMargin: 10
+        color: theme.bgColor
 
         Flickable {
             id: flickableText
@@ -117,7 +118,7 @@ Rectangle {
 
             TextEdit {
                 id: textEditSnippet
-                color: "#555555"
+                color: theme.textColor
                 width: rectangleText.width - 10
                 font.family: duktofontsmall.name
                 font.pixelSize: 13
@@ -149,7 +150,7 @@ Rectangle {
                 if (guiBehind.textSnippetSending)
                     textEditSnippet.paste();
                 else {
-                    if (textEditSnippet.selectedText == "")
+                    if (textEditSnippet.selectedText === "")
                         textEditSnippet.selectAll();
                     textEditSnippet.copy();
                 }
@@ -165,7 +166,7 @@ Rectangle {
         anchors.bottomMargin: 10
         label: "Send"
         visible: guiBehind.textSnippetSending
-        buttonEnabled: textEditSnippet.text != ""
+        buttonEnabled: textEditSnippet.text !== ""
         Connections {
             function onClicked() {
                 guiBehind.textSnippet = textEditSnippet.text;

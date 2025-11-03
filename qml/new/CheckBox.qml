@@ -29,12 +29,13 @@ Rectangle {
         id: indicator
         implicitWidth: 16
         implicitHeight: 16
-        border.color: "#888888"
-        border.width: 1
+        color: theme.bgColor
+        border.color: theme.themeColor
+        border.width: 2
 
         Rectangle {
             visible: checkbox.checked
-            color: theme.mainColor
+            color: theme.themeLighterColor
             anchors.margins: 3
             anchors.fill: parent
         }
@@ -55,7 +56,7 @@ Rectangle {
     SText {
         id: label
         font.pixelSize: 16
-        color: "#888888"
+        color: theme.textColor
         anchors.top: checkbox.top
         anchors.left: indicator.right
         anchors.leftMargin: 4

@@ -85,6 +85,15 @@ QString Settings::themeColor()
     return mSettings.value("ThemeColor", Theme::DEFAULT_THEME_COLOR).toString();
 }
 
+void Settings::saveDarkMode(bool enabled) {
+    mSettings.setValue("DarkMode", enabled);
+    mSettings.sync();
+}
+
+bool Settings::darkMode() {
+    return mSettings.value("DarkMode", false).toBool();
+}
+
 void Settings::saveShowTermsOnStart(bool show)
 {
     mSettings.setValue("R5/ShowTermsOnStart", show);

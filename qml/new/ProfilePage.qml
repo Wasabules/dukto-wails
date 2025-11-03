@@ -20,7 +20,7 @@ import QtQuick 2.3
 
 Rectangle {
     id: profilePage
-    color: "#00000000"
+    color: "transparent"
 
     signal back()
 
@@ -36,7 +36,7 @@ Rectangle {
 
         Rectangle {
             id: backRecangle
-            color: theme.mainColor
+            color: theme.themeColor
             anchors.left: parent.left
             anchors.top: parent.top
             anchors.bottom: parent.bottom
@@ -110,7 +110,7 @@ Rectangle {
                 anchors.topMargin: 16
                 font.pixelSize: 16
                 text: "Your Name:"
-                color: "#ffffff"
+                color: theme.themeTextColor
             }
 
             Rectangle {
@@ -121,7 +121,7 @@ Rectangle {
                 anchors.top: nameLabel.bottom
                 anchors.topMargin: 10
                 height: 30
-                color: "#ffffff"
+                color: theme.themeBgColor
                 clip: true
 
                 TextInput {
@@ -136,7 +136,7 @@ Rectangle {
                     focus: true
                     selectByMouse: true
                     text: guiBehind.buddyName
-                    color: theme.mainColor
+                    color: theme.themeColor
                     Connections {
                         function onEditingFinished() {
                             if (nameText.text !== "" && guiBehind.buddyName !== nameText.text) {
@@ -154,18 +154,18 @@ Rectangle {
                 anchors.topMargin: 10
                 font.pixelSize: 16
                 text: "Your Avatar:"
-                color: "#ffffff"
+                color: theme.themeTextColor
             }
 
             Rectangle {
-                color: theme.mainColor
+                color: theme.themeColor
                 anchors.left: parent.left
                 anchors.leftMargin: 20
                 anchors.top: labelAvatar.bottom
                 anchors.topMargin: 10
                 height: 68
                 width: 68
-                border.color: "#ffffff"
+                border.color: theme.themeTextColor
                 border.width: 2
 
                 Image {
@@ -192,7 +192,7 @@ Rectangle {
             }
         }
 
-        ButtonDark {
+        Button {
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             anchors.rightMargin: 10

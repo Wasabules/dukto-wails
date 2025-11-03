@@ -59,6 +59,7 @@ class GuiBehind : public QObject
     Q_PROPERTY(QString buddyAvatar READ buddyAvatar NOTIFY buddyAvatarChanged)
     Q_PROPERTY(bool showNotification READ showNotification WRITE setShowNotification NOTIFY showNotificationChanged)
     Q_PROPERTY(bool closeToTray READ closeToTray WRITE setCloseToTray NOTIFY closeToTrayChanged)
+    Q_PROPERTY(bool darkMode READ darkMode WRITE setDarkMode NOTIFY darkModeChanged)
     Q_PROPERTY(QString initError READ initError NOTIFY initErrorChanged)
     Q_PROPERTY(QString initErrorAction READ initErrorAction NOTIFY initErrorActionChanged)
     Q_PROPERTY(QMargins screenPadding READ screenPadding NOTIFY screenPaddingChanged)
@@ -112,6 +113,8 @@ public:
     bool showNotification();
     void setCloseToTray(bool enabled);
     bool closeToTray();
+    void setDarkMode(bool enabled);
+    bool darkMode();
     void setInitError(const QString &error, const QString &action = "Retry");
     QString initError();
     QString initErrorAction();
@@ -145,6 +148,7 @@ signals:
     void buddyAvatarChanged();
     void showNotificationChanged();
     void closeToTrayChanged();
+    void darkModeChanged();
     void initErrorChanged();
     void initErrorActionChanged();
     void screenPaddingChanged();

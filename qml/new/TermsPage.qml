@@ -20,7 +20,7 @@ import QtQuick 2.3
 
 Rectangle {
     id: termsPage
-    color: "#ffffff"
+    color: theme.bgColor
 
     signal ok()
 
@@ -36,7 +36,7 @@ Rectangle {
         anchors.topMargin: 5
         font.pixelSize: 64
         text: "Disclaimer"
-        color: theme.lighterColor
+        color: theme.themeLighterColor
     }
 
     SText {
@@ -49,13 +49,13 @@ Rectangle {
         anchors.topMargin: 45
         font.pixelSize: 16
         text: "Please read and press 'accept'"
-        color: "#888888"
+        color: theme.textColor
     }
 
 
     Rectangle {
         id: rectangleText
-        border.color: theme.lighterColor
+        border.color: theme.themeLighterColor
         border.width: 1
         anchors.top: boxSender.bottom
         anchors.topMargin: 10
@@ -65,6 +65,7 @@ Rectangle {
         anchors.bottomMargin: 20
         anchors.right: parent.right
         anchors.rightMargin: 10
+        color: theme.bgColor
 
         Flickable {
             id: flickableText
@@ -88,7 +89,7 @@ Rectangle {
 
             TextEdit {
                 id: textEditSnippet
-                color: "#888888"
+                color: theme.textColor
                 width: rectangleText.width - 10
                 font.family: duktofontsmall.name
                 font.pixelSize: 13

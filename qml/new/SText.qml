@@ -20,5 +20,5 @@ import QtQuick 2.3
 
 Text {
     font.family: duktofontsmall.name
-    color: "#ffffff"
+    color: theme.themeTextColor
 }

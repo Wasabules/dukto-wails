@@ -20,7 +20,7 @@ import QtQuick 2.3
 
 Rectangle {
     id: progressPage
-    color: "#00000000"
+    color: "transparent"
 
     MouseArea {
         anchors.fill: parent
@@ -34,7 +34,7 @@ Rectangle {
 
         Rectangle {
             id: backRecangle
-            color: theme.mainColor
+            color: theme.themeColor
             anchors.left: parent.left
             anchors.top: parent.top
             anchors.bottom: parent.bottom
@@ -105,7 +105,7 @@ Rectangle {
             anchors.leftMargin: 17
             anchors.rightMargin: 17
             anchors.topMargin: 10
-            color: theme.lighterColor
+            color: theme.themeLighterColor
             height: 40
 
             Rectangle {
@@ -113,7 +113,7 @@ Rectangle {
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
-                color: "#ffffff"
+                color: theme.themeTextColor
                 width: parent.width * guiBehind.currentTransferProgress / 100;
             }
         }

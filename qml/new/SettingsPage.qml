@@ -31,11 +31,11 @@ Flickable {
 
     function refreshColor() {
 
-        picker.setColor(theme.mainColor);
+        picker.setColor(theme.themeColor);
     }
 
     Rectangle {
-        color: "#ffffff"
+        color: theme.bgColor
         height: settingsPage.height + settingsPage.contentY
         width: settingsPage.width
 
@@ -71,7 +71,7 @@ Flickable {
             anchors.topMargin: 5
             font.pixelSize: 64
             text: "Settings"
-            color: theme.lighterColor
+            color: theme.themeLighterColor
         }
 
         SText {
@@ -82,7 +82,7 @@ Flickable {
             anchors.topMargin: 70
             font.pixelSize: 16
             text: "Save received file in:"
-            color: "#888888"
+            color: theme.textColor
         }
 
         Rectangle {
@@ -94,7 +94,7 @@ Flickable {
             anchors.rightMargin: 17
             anchors.topMargin: 8
             height: 30
-            color: theme.mainColor
+            color: theme.themeColor
             clip: true
 
             Image {
@@ -136,7 +136,7 @@ Flickable {
             anchors.topMargin: 30
             font.pixelSize: 16
             text: "Theme color:"
-            color: "#888888"
+            color: theme.textColor
         }
 
         ColorPicker {
@@ -309,6 +309,21 @@ Flickable {
             Connections {
                 function onClicked(checked) {
                     guiBehind.closeToTray = checked
+                }
+            }
+        }
+
+        CheckBox {
+            id: dmwitch
+            anchors.top: cswitch.bottom
+            anchors.left: labelPath.left
+            anchors.topMargin: 25
+            text: "Enable Dark Mode"
+            checked: guiBehind.darkMode
+
+            Connections {
+                function onClicked(checked) {
+                    guiBehind.darkMode = checked
                 }
             }
         }
