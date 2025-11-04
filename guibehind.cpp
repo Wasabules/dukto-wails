@@ -123,6 +123,8 @@ GuiBehind::GuiBehind() : QObject(nullptr)
         mUpdatesChecker->start();
     });
 #endif
+
+    qRegisterMetaType<QMargins>("QMargins");
 }
 
 GuiBehind::~GuiBehind()
