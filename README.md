@@ -1,6 +1,6 @@
 # Dukto
 
-Dukto is an easy file transfer tool for LAN. It was created by Emanuele Colombo, and ported to Qt 5/6 by me and [other contributors](https://github.com/xuzhen/dukto-qt5/graphs/contributors).
+Dukto is an easy file transfer tool for LAN. It was created by Emanuele Colombo, and ported to Qt 5/6 by me and [other contributors](https://github.com/xuzhen/dukto/graphs/contributors).
 
 Now it supports Windows, Linux, MacOS and Android.
 
@@ -10,7 +10,7 @@ Dukto transfers files and text without encryption and is only designed for use i
 ### Prebuilt Packages
 
 #### Windows
-Portable versions can be downloaded from [the releases page](https://github.com/xuzhen/dukto-qt5/releases)
+Portable versions can be downloaded from [the releases page](https://github.com/xuzhen/dukto/releases)
 
 The Qt6 version supports Windows 10+ only. If you are still using Windows 7, download the Qt5 version instead.
 
@@ -20,12 +20,12 @@ If you get `The program can't start because MSVCP140.dll is missing from your co
 Direct links: [X64](https://aka.ms/vs/17/release/vc_redist.x64.exe) or [X86](https://aka.ms/vs/17/release/vc_redist.x86.exe)
 
 #### macOS
-The universal app for macOS can be downloaded from [the releases page](https://github.com/xuzhen/dukto-qt5/releases)
+The universal app for macOS can be downloaded from [the releases page](https://github.com/xuzhen/dukto/releases)
 
 Supports macOS 11+
 
 #### Android
-APKs can be downloaded from [the releases page](https://github.com/xuzhen/dukto-qt5/releases)
+APKs can be downloaded from [the releases page](https://github.com/xuzhen/dukto/releases)
 
 The `dukto_*_qt6.apk` supports Android 8.0 (Oreo) and later.
 

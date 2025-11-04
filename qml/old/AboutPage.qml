@@ -77,7 +77,7 @@ Flickable {
             anchors.topMargin: 10
             font.pixelSize: 18
             scale: 1
-            text: "Website: <a href=\"https://github.com/xuzhen/dukto-qt5/\">Source Code Repository</a>"
+            text: "Website: <a href=\"https://github.com/xuzhen/dukto/\">Source Code Repository</a>"
             color: theme.textColor
             linkColor: theme.themeColor
             onLinkActivated: Qt.openUrlExternally(link)
