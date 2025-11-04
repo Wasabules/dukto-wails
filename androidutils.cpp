@@ -111,21 +111,17 @@ void AndroidUtilsBase::runOnAndroidThread(const std::function<void()> &runnable)
 }
 
 bool AndroidUtilsBase::clearExceptions() {
-    static QJniEnvironment env;
-#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
-    if (env->ExceptionCheck()) {
+    JNIEnv *env = QJniEnvironment::getJniEnv();
+    if (env->ExceptionCheck() == JNI_TRUE) {
         env->ExceptionClear();
         return true;
     }
     return false;
-#else
-    return env.checkAndClearExceptions();
-#endif
 }
 
 bool AndroidUtilsBase::hasExceptions() {
-    static QJniEnvironment env;
-    return env->ExceptionCheck();
+    JNIEnv *env = QJniEnvironment::getJniEnv();
+    return env->ExceptionCheck() == JNI_TRUE;
 }
 
 /*============================================================*/
