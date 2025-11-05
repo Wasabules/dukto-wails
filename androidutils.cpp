@@ -111,7 +111,11 @@ void AndroidUtilsBase::runOnAndroidThread(const std::function<void()> &runnable)
 }
 
 bool AndroidUtilsBase::clearExceptions() {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     JNIEnv *env = QJniEnvironment::getJniEnv();
+#else
+    JNIEnv *env = QJniEnvironment();
+#endif
     if (env->ExceptionCheck() == JNI_TRUE) {
         env->ExceptionClear();
         return true;
@@ -120,7 +124,11 @@ bool AndroidUtilsBase::clearExceptions() {
 }
 
 bool AndroidUtilsBase::hasExceptions() {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     JNIEnv *env = QJniEnvironment::getJniEnv();
+#else
+    JNIEnv *env = QJniEnvironment();
+#endif
     return env->ExceptionCheck() == JNI_TRUE;
 }
 
@@ -655,12 +663,14 @@ bool AndroidStorage::removeFile(const QJniObject &uri) {
 
 QMargins AndroidScreenArea::getMargins() {
     QMargins m;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     QMargins m1 = getSystemBarsMargins();
     QMargins m2 = getSafeAreaMargins();
     m.setTop(qMax(m1.top(), m2.top()));
     m.setBottom(qMax(m1.bottom(), m2.bottom()));
     m.setLeft(qMax(m1.left(), m2.left()));
     m.setRight(qMax(m1.right(), m2.right()));
+#endif
     return m;
 }
 
@@ -752,6 +762,7 @@ bool AndroidTheme::isNightMode() {
 }
 
 void AndroidTheme::setAppNightMode(bool nightMode) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     auto code = [nightMode]() {
         QJniObject decorView = getDecorView();
         if (decorView.isValid() == false) {
@@ -761,6 +772,9 @@ void AndroidTheme::setAppNightMode(bool nightMode) {
         setSystemBarsNightMode(nightMode, decorView);
     };
     runOnAndroidThread(code);
+#else
+    Q_UNUSED(nightMode);
+#endif
 }
 
 void AndroidTheme::setDefaultNightMode(bool nightMode, QJniObject &decorView) {

@@ -51,9 +51,16 @@ DuktoWindow::DuktoWindow(GuiBehind *gb, QQuickWidget *parent) :
     setMaximumWidth(350);
     setMinimumSize(350, 500);
     setWindowIcon(QIcon(":/dukto.png"));
-#else
-    // workaround Qt 5 window size bug
+#endif
+
+#ifdef Q_OS_ANDROID
+    // workaround window size bug
     setMinimumSize(1, 1);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
+    setWindowFlag(Qt::ExpandedClientAreaHint, true);
+#elif QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    setWindowFlag(Qt::MaximizeUsingFullscreenGeometryHint, true);
+#endif
 #endif
     setResizeMode(QQuickWidget::SizeRootObjectToView);
     connect(engine(), &QQmlEngine::quit, this, &DuktoWindow::close);

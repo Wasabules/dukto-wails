@@ -154,11 +154,6 @@ void GuiBehind::setViewer(DuktoWindow *view, SystemTray *tray) {
 #ifndef MOBILE_APP
     view->restoreGeometry(gSettings->windowGeometry());
 #else
-#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
-    view->setWindowFlag(Qt::ExpandedClientAreaHint, true);
-#else
-    view->setWindowFlag(Qt::MaximizeUsingFullscreenGeometryHint, true);
-#endif
     view->showMaximized();
 #endif
 
