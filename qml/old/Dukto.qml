@@ -56,6 +56,7 @@ Rectangle {
         anchors.right: parent.right
         anchors.top: parent.top
         height: guiBehind.screenPadding.top
+        color: theme.bgColor
     }
 
     Rectangle {
@@ -64,6 +65,7 @@ Rectangle {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         height: guiBehind.screenPadding.bottom
+        color: theme.bgColor
     }
 
     Item {
@@ -78,6 +80,7 @@ Rectangle {
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             width: guiBehind.screenPadding.left
+            color: theme.bgColor
         }
 
         Rectangle {
@@ -86,6 +89,7 @@ Rectangle {
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             width: guiBehind.screenPadding.right
+            color: theme.bgColor
         }
 
         DuktoInner {
