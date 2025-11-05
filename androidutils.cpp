@@ -734,14 +734,18 @@ QMargins AndroidScreenArea::getSystemBarsMargins() {
 #define SYSTEM_UI_FLAG_LAYOUT_STABLE        256
 
 bool AndroidTheme::isNightMode() {
-    bool r = false;
+    volatile bool r = false;
     auto code = [&r]() {
         QJniObject resources = getResources();
         QJniObject conf = resources.callObjectMethod("getConfiguration", "()Landroid/content/res/Configuration;");
         if (conf.isValid() == false) {
             return;
         }
-        r = ((conf.getField<jint>("uiMode") & UI_MODE_NIGHT_YES) == UI_MODE_NIGHT_YES);
+        if (AndroidEnvironment::sdkVersion() >= 30) {
+            r = (conf.callMethod<jboolean>("isNightModeActive", "()Z") == JNI_TRUE);
+        } else {
+            r = ((conf.getField<jint>("uiMode") & UI_MODE_NIGHT_YES) == UI_MODE_NIGHT_YES);
+        }
     };
     runOnAndroidThread(code);
     return r;
