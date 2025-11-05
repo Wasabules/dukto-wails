@@ -33,6 +33,8 @@ endif()
 if(ANDROID)
     set(ANDROID_ABI ${CMAKE_ANDROID_ARCH_ABI})
     add_definitions("-DMOBILE_APP")
+else()
+    add_definitions("-DDESKTOP_APP")
 endif()
 
 if(QT_CMAKE_ROOT)

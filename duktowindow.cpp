@@ -42,7 +42,7 @@ DuktoWindow::DuktoWindow(GuiBehind *gb, QQuickWidget *parent) :
     QQuickWidget(parent), mGuiBehind(gb)
 {
     // Configure window
-#ifndef MOBILE_APP
+#ifdef DESKTOP_APP
     setAcceptDrops(true);
     setWindowTitle("Dukto");
     setWindowFlags(Qt::CustomizeWindowHint | Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint | Qt::WindowMinimizeButtonHint);
@@ -63,6 +63,7 @@ DuktoWindow::DuktoWindow(GuiBehind *gb, QQuickWidget *parent) :
 
     setResizeMode(QQuickWidget::SizeRootObjectToView);
     connect(engine(), &QQmlEngine::quit, this, &DuktoWindow::close);
+
 #ifdef Q_OS_MAC
     instance = this;
     setupDockHandler();
@@ -190,7 +191,7 @@ void DuktoWindow::dropEvent(QDropEvent *event)
 
 void DuktoWindow::closeEvent(QCloseEvent *event)
 {
-#ifndef MOBILE_APP
+#ifdef DESKTOP_APP
     if (isVisible() && gSettings->closeToTrayEnabled()) {
         event->ignore();
         hide();

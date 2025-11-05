@@ -23,7 +23,7 @@
 #include "guibehind.h"
 #include "duktowindow.h"
 
-#ifndef MOBILE_APP
+#ifdef DESKTOP_APP
 #include "systemtray.h"
 #endif
 
@@ -66,7 +66,7 @@ int main(int argc, char *argv[])
     }
 #endif
 
-#ifndef MOBILE_APP
+#ifdef DESKTOP_APP
     QCommandLineParser parser;
     parser.setApplicationDescription("Dukto is a simple, fast and multi-platform file transfer tool for LAN users.");
     parser.addHelpOption();
@@ -83,7 +83,7 @@ int main(int argc, char *argv[])
     QObject::connect(&app, &SingleApplication::receivedMessage, &viewer, &DuktoWindow::activateWindow);
 #endif
 
-#ifndef MOBILE_APP
+#ifdef DESKTOP_APP
     SystemTray tray(viewer);
     gb.setViewer(&viewer, &tray);
     viewer.setVisible(!parser.isSet(hideOption));

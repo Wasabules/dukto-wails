@@ -151,7 +151,7 @@ void GuiBehind::setViewer(DuktoWindow *view, SystemTray *tray) {
 
     // Load GUI
     view->setSource(QUrl("qrc:/qml/dukto/Dukto.qml"));
-#ifndef MOBILE_APP
+#ifdef DESKTOP_APP
     view->restoreGeometry(gSettings->windowGeometry());
 #else
     view->showMaximized();
@@ -588,10 +588,10 @@ void GuiBehind::sendFileComplete()
 {
     // Show completed message
     setMessagePageTitle("Send");
-#ifdef MOBILE_APP
-    setMessagePageText("Your data has been sent to your buddy!");
-#else
+#ifdef DESKTOP_APP
     setMessagePageText("Your data has been sent to your buddy!\n\nDo you want to send other files to your buddy? Just drag and drop them here!");
+#else
+    setMessagePageText("Your data has been sent to your buddy!");
 #endif
     setMessagePageBackState("send");
 
@@ -1030,10 +1030,10 @@ QMargins GuiBehind::screenPadding() {
 }
 
 bool GuiBehind::isDesktopApp() {
-#ifdef MOBILE_APP
-    return false;
-#else
+#ifdef DESKTOP_APP
     return true;
+#else
+    return false;
 #endif
 }
 

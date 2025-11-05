@@ -30,6 +30,8 @@ android: {
     DEFINES -= GSETTINGS_SUPPORT
     DEFINES -= SINGLE_APP
     DEFINES += MOBILE_APP
+} else {
+    DEFINES += DESKTOP_APP
 }
 !linux: {
     DEFINES -= NOTIFY_LIBNOTIFY
