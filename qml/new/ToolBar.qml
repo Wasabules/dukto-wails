@@ -79,7 +79,10 @@ Item {
             text: "Received"
             font.pixelSize: 12
             horizontalAlignment: Text.AlignHCenter
-            width: 1
+            height: toolBar.state === "WithLabels" ? 12 : 0
+            clip: true
+
+            Behavior on height { NumberAnimation { duration: 200; easing.type: "OutCubic" } }
         }
 
         Image {
@@ -109,7 +112,10 @@ Item {
             text: "Addresses"
             font.pixelSize: 12
             horizontalAlignment: Text.AlignHCenter
-            width: 1
+            height: toolBar.state === "WithLabels" ? 12 : 0
+            clip: true;
+
+            Behavior on height { NumberAnimation { duration: 200; easing.type: "OutCubic" } }
         }
 
         Image {
@@ -138,7 +144,10 @@ Item {
             text: "Settings"
             font.pixelSize: 12
             horizontalAlignment: Text.AlignHCenter
-            width: 1
+            height: toolBar.state === "WithLabels" ? 12 : 0
+            clip: true
+
+            Behavior on height { NumberAnimation { duration: 200; easing.type: "OutCubic" } }
         }
 
         Image {
