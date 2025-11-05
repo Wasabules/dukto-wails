@@ -714,6 +714,7 @@ void GuiBehind::resetProgressStatus()
 void GuiBehind::discoveryNeighbors()
 {
     mDuktoProtocol.greeting();
+    Platform::setNonClientAreaMode(nullptr, Platform::isDarkTheme());
 }
 
 // Show updates message
@@ -978,6 +979,12 @@ bool GuiBehind::closeToTray() {
 
 void GuiBehind::setDarkMode(bool enabled) {
     mTheme.setDarkMode(enabled);
+    if (mView != nullptr) {
+        QWindow *win = mView->windowHandle();
+        if (win != nullptr) {
+            Platform::setNonClientAreaMode(win, enabled);
+        }
+    }
     gSettings->saveDarkMode(enabled);
     emit darkModeChanged();
 }
@@ -1015,9 +1022,6 @@ void GuiBehind::updateScreenPadding() {
     if (m != mScreenPadding) {
         mScreenPadding = m;
         emit screenPaddingChanged();
-#ifdef Q_OS_ANDROID
-        AndroidTheme::setAppNightMode(false);
-#endif
     }
 }
 
@@ -1165,4 +1169,11 @@ void GuiBehind::resetBuddy() {
 
 QString GuiBehind::version() {
     return QLatin1String(VERSION_TEXT);
+}
+
+
+void GuiBehind::updateColorScheme(bool darkMode) {
+    if (darkMode != this->darkMode()) {
+        setDarkMode(darkMode);
+    }
 }

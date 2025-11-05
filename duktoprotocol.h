@@ -52,10 +52,10 @@ public:
     void updateBuddy();
     void setDestDir(const QString &dir);
     
-private slots:
+private Q_SLOTS:
     void newIncomingConnection();
 
-signals:
+Q_SIGNALS:
      void peerListAdded(Peer peer);
      void peerListRemoved(Peer peer);
      void sendFileComplete();

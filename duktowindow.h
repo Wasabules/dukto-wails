@@ -25,6 +25,7 @@
 class EcWin7;
 #endif
 class GuiBehind;
+class PlatformObserver;
 
 class DuktoWindow : public QQuickWidget
 {
@@ -36,10 +37,10 @@ public:
     void hideTaskbarProgress();
     void stopTaskbarProgress();
 
-public slots:
+public Q_SLOTS:
     void activateWindow();
 
-signals:
+Q_SIGNALS:
 #ifdef Q_OS_ANDROID
     void sizeChanged();
 #endif
@@ -63,9 +64,11 @@ protected:
 
 private:
     GuiBehind *mGuiBehind;
+    bool debuted = false;
 #ifdef Q_OS_WIN
     EcWin7 *mWin7 = nullptr;
 #endif
+    PlatformObserver *mObserver = nullptr;
 #ifdef Q_OS_MAC
     void setupDockHandler();
 #endif

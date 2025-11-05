@@ -38,7 +38,7 @@ public:
 
     void abort();
 
-signals:
+Q_SIGNALS:
     void started(qint64 totalSize);
     void progress(qint64 total, qint64 received);
     void itemProgress(qint64 total, qint64 current, QString name);
@@ -48,7 +48,7 @@ signals:
     void fileReceived(QString name, QString path, qint64 size);
     void textReceived(QString text);
 
-private slots:
+private Q_SLOTS:
     void processData();
     void connectionError(QAbstractSocket::SocketError error);
 

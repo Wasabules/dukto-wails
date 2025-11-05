@@ -26,6 +26,9 @@
 #include <QStandardPaths>
 #include <QImage>
 #include <QProcessEnvironment>
+#include <QGuiApplication>
+#include <QStyleHints>
+#include <QPalette>
 #include "settings.h"
 
 #if defined(Q_OS_MAC)
@@ -36,6 +39,14 @@
 #if defined(Q_OS_WIN)
 #include <windows.h>
 #include <lmaccess.h>
+#include <QLibrary>
+
+// undocumented, starting from Win10 1809, replaced from 20H2
+#define DWMWA_USE_IMMERSIVE_DARK_MODE_OLD 19
+// starting from Win10 20H2
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+#define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
 #endif
 
 #if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
@@ -47,6 +58,10 @@
 
 #if defined(Q_OS_ANDROID)
 #include "androidutils.h"
+#endif
+
+#if defined(GSETTINGS_SUPPORT)
+#include <qgsettings.h>
 #endif
 
 // Returns the buddy name
@@ -293,11 +308,163 @@ QString Platform::getWinTempAvatarPath()
 
 #endif
 
+#if defined(Q_OS_WIN)
+int Platform::isWinDarkTheme() {
+    DWORD buffer;
+    DWORD cbData = sizeof(buffer);
+    LSTATUS res = RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", L"AppsUseLightTheme", RRF_RT_REG_DWORD, NULL, &buffer, &cbData);
+    if (res == ERROR_SUCCESS) {
+        return (buffer == 1 ? 0 : 1);
+    }
+    return -1;
+}
+#endif
+
+
+#if defined(Q_OS_LINUX) && defined(GSETTINGS_SUPPORT)
+int Platform::isGSettingsDarkTheme(QGSettings *gs) {
+    QString gtkColorScheme = gs->get("color-scheme").toString();
+    if (gtkColorScheme == "prefer-dark") {
+        return 1;
+    } else if (gtkColorScheme == "prefer-light") {
+        return 0;
+    } else {
+        // default
+        QString gtkTheme = gs->get("gtk-theme").toString();
+        if (gtkTheme.endsWith("-dark"), Qt::CaseInsensitive) {
+            return 1;
+        }
+    }
+    return -1;
+}
+#endif
+
 #if !defined(Q_OS_ANDROID)
 
 QString Platform::env(const QString &name) {
     static const QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     return env.value(name);
 }
+
+#endif
+
+void Platform::setNonClientAreaMode(QWindow *win, bool darkMode) {
+#if defined(Q_OS_WIN)
+    QLibrary lib("dwmapi.dll");
+    if (lib.load()) {
+        typedef HRESULT (WINAPI *DwmSetWindowAttribute)(HWND,DWORD,LPCVOID,DWORD); // WinVista+
+        DwmSetWindowAttribute pDwmSetWindowAttribute = reinterpret_cast<DwmSetWindowAttribute>(lib.resolve("DwmSetWindowAttribute"));
+        if (pDwmSetWindowAttribute != nullptr) {
+            HWND hWnd = reinterpret_cast<HWND>(win->winId());
+            BOOL value = darkMode ? TRUE : FALSE;
+            pDwmSetWindowAttribute(hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE_OLD, &value, sizeof(value));
+            pDwmSetWindowAttribute(hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &value, sizeof(value));
+            // force redraw
+            RECT rect;
+            GetWindowRect(hWnd, &rect);
+            SetWindowPos(hWnd, 0, 0, 0, rect.right - rect.left, rect.bottom - rect.top + 1, SWP_NOREDRAW|SWP_NOACTIVATE|SWP_NOMOVE|SWP_NOZORDER);
+            SetWindowPos(hWnd, 0, 0, 0, rect.right - rect.left, rect.bottom - rect.top, SWP_DRAWFRAME|SWP_NOACTIVATE|SWP_NOMOVE|SWP_NOZORDER);
+        }
+    }
+#elif defined(Q_OS_ANDROID)
+    Q_UNUSED(win)
+    AndroidTheme::setAppNightMode(darkMode);
+#else
+    Q_UNUSED(win)
+    Q_UNUSED(darkMode)
+#endif
+}
+
+bool Platform::isDarkTheme() {
+#if 0 && QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    const QStyleHints *hints = QGuiApplication::styleHints();
+    const Qt::ColorScheme qtColorScheme = hints->colorScheme();
+    if (qtColorScheme == Qt::ColorScheme::Dark) {
+        return true;
+    } else if (qtColorScheme == Qt::ColorScheme::Light) {
+        return false;
+    }
+#endif
+#if defined(Q_OS_WIN)
+    int r = isWinDarkTheme();
+    if (r != -1) {
+        return r == 1;
+    }
+#elif defined(Q_OS_ANDROID)
+    return AndroidTheme::isNightMode();
+#elif defined(Q_OS_LINUX)
+#ifdef GSETTINGS_SUPPORT
+    const QByteArray schema = "org.gnome.desktop.interface";
+    if (QGSettings::isSchemaInstalled(schema)) {
+        QGSettings gsettings(schema);
+        int r = isGSettingsDarkTheme(&gsettings);
+        if (r >= 0) {
+            return r == 1;
+        }
+    }
+#endif
+#endif
+    return false;
+}
+
+PlatformObserver::PlatformObserver(QObject *parent) : QObject(parent) {
+    observe();
+}
+
+PlatformObserver::~PlatformObserver() {
+#if QT_VERSION < QT_VERSION_CHECK(6, 5, 0) && defined(Q_OS_LINUX) && defined(GSETTINGS_SUPPORT)
+    delete gsettings;
+#endif
+}
+
+void PlatformObserver::observe() {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    const QStyleHints *hints = QGuiApplication::styleHints();
+    connect(hints, &QStyleHints::colorSchemeChanged, this, [this](Qt::ColorScheme cs) {
+        emit colorSchemeChanged(cs == Qt::ColorScheme::Dark);
+    });
+#else
+
+#ifdef Q_OS_LINUX
+#ifdef GSETTINGS_SUPPORT
+    const QByteArray schema = "org.gnome.desktop.interface";
+    if (QGSettings::isSchemaInstalled(schema)) {
+        gsettings = new QGSettings(schema);
+        connect(gsettings, &QGSettings::changed, this, &PlatformObserver::gsettingsChanged);
+    }
+#endif
+#endif
+
+#endif
+}
+
+
+#if QT_VERSION < QT_VERSION_CHECK(6, 5, 0)
+
+#ifdef Q_OS_WIN
+bool PlatformObserver::winEvent(MSG *message, void *result) {
+    Q_UNUSED(result);
+    if (message->message == WM_SETTINGCHANGE) {
+        LPTSTR str = reinterpret_cast<LPTSTR>(message->lParam);
+        if (lstrcmp(str, L"ImmersiveColorSet") == 0) {
+            emit colorSchemeChanged(Platform::isWinDarkTheme());
+        }
+    }
+    return false;
+}
+#endif
+
+#if defined(Q_OS_LINUX) && defined(GSETTINGS_SUPPORT)
+
+void PlatformObserver::gsettingsChanged(const QString &key) {
+    if (key == "color-scheme" || (key == "gtk-theme" && gsettings->get("color-scheme").toString() == "default")) {
+        int r = Platform::isGSettingsDarkTheme(gsettings);
+        if (r >= 0) {
+            emit colorSchemeChanged(r == 1);
+        }
+    }
+}
+
+#endif
 
 #endif

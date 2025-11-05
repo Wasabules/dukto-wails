@@ -18,10 +18,8 @@
 
 #include "duktowindow.h"
 #include "guibehind.h"
-
-#ifndef MOBILE_APP
+#include "platform.h"
 #include "settings.h"
-#endif
 
 #ifdef Q_OS_WIN
 #include "ecwin7.h"
@@ -62,6 +60,7 @@ DuktoWindow::DuktoWindow(GuiBehind *gb, QQuickWidget *parent) :
     setWindowFlag(Qt::MaximizeUsingFullscreenGeometryHint, true);
 #endif
 #endif
+
     setResizeMode(QQuickWidget::SizeRootObjectToView);
     connect(engine(), &QQmlEngine::quit, this, &DuktoWindow::close);
 #ifdef Q_OS_MAC
@@ -76,12 +75,16 @@ DuktoWindow::DuktoWindow(GuiBehind *gb, QQuickWidget *parent) :
         }
     });
 #endif
+
+    mObserver = new PlatformObserver();
+    connect(mObserver, &PlatformObserver::colorSchemeChanged, mGuiBehind, &GuiBehind::updateColorScheme);
 }
 
 DuktoWindow::~DuktoWindow() {
 #ifdef Q_OS_WIN
     delete mWin7;
 #endif
+    delete mObserver;
 }
 
 void DuktoWindow::showTaskbarProgress(uint percent) {
@@ -124,11 +127,15 @@ bool DuktoWindow::nativeEvent(const QByteArray &eventType, void *message, qintpt
 bool DuktoWindow::nativeEvent(const QByteArray &eventType, void *message, long *result) {
 #endif
     Q_UNUSED(eventType)
-    if (mWin7 != nullptr) {
-        return mWin7->winEvent(reinterpret_cast<MSG*>(message), result);
-    } else {
-        return false;
+#ifdef Q_OS_WIN
+    if (mWin7 != nullptr && mWin7->winEvent(reinterpret_cast<MSG*>(message), result)) {
+        return true;
     }
+    if (mObserver->winEvent(reinterpret_cast<MSG*>(message), result)) {
+        return true;
+    }
+#endif
+    return false;
 }
 #endif
 
@@ -198,12 +205,18 @@ void DuktoWindow::closeEvent(QCloseEvent *event)
 
 void DuktoWindow::showEvent(QShowEvent *event) {
     QQuickWidget::showEvent(event);
-#ifdef Q_OS_WIN
-    // Taskbar integration with Win7+
-    if (mWin7 == nullptr) {
-        mWin7 = new EcWin7(this->windowHandle());
-    }
+    if (!debuted) {
+#if defined(Q_OS_WIN)
+        QWindow *win = windowHandle();
+        // Taskbar integration with Win7+
+        mWin7 = new EcWin7(win);
+        // Title bar color scheme
+        Platform::setNonClientAreaMode(win, gSettings->darkMode());
+#elif defined(Q_OS_ANDROID)
+        Platform::setNonClientAreaMode(nullptr, gSettings->darkMode());
 #endif
+        debuted = true;
+    }
 }
 
 void DuktoWindow::resizeEvent(QResizeEvent *event) {

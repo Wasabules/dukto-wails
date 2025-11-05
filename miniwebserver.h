@@ -34,7 +34,7 @@ public:
 protected:
     void incomingConnection(qintptr handle) override;
 
-private slots:
+private Q_SLOTS:
      void readClient();
 
 private:

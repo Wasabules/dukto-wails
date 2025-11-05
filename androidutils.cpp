@@ -736,10 +736,11 @@ QMargins AndroidScreenArea::getSystemBarsMargins() {
 #define UI_MODE_NIGHT_MASK                  48
 #define UI_MODE_NIGHT_YES                   32
 #define UI_MODE_NIGHT_NO                    16
-#define R_color_white                       0x0106000b
-#define R_color_darker_gray                 0x01060000
+#define R_color_background_light            0x0106000f
+#define R_color_background_dark             0x0106000e
 #define APPEARANCE_LIGHT_NAVIGATION_BARS    16
 #define APPEARANCE_LIGHT_STATUS_BARS        8
+#define APPEARANCE_LIGHT_CAPTION_BARS       256
 #define SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR 16
 #define SYSTEM_UI_FLAG_LAYOUT_STABLE        256
 
@@ -787,7 +788,7 @@ void AndroidTheme::setDefaultNightMode(bool nightMode, QJniObject &decorView) {
     QJniObject newConf(conf);
     uiMode = (nightMode ? UI_MODE_NIGHT_YES : UI_MODE_NIGHT_NO) | (uiMode & ~UI_MODE_NIGHT_MASK);
     newConf.setField<jint>("uiMode", uiMode);
-    // FIXME: updateConfiguration deprecated in API level 25.
+    // FIXME: updateConfiguration deprecated since API level 25.
     resources.callMethod<void>("updateConfiguration", "(Landroid/content/res/Configuration;Landroid/util/DisplayMetrics;)V", newConf.object(), nullptr);
     decorView.callMethod<void>("dispatchConfigurationChanged", "(Landroid/content/res/Configuration;)V", newConf.object());
 }
@@ -799,7 +800,7 @@ void AndroidTheme::setSystemBarsNightMode(bool nightMode, QJniObject &decorView)
         if (controller.isValid() == false) {
             return;
         }
-        const jint mask = APPEARANCE_LIGHT_NAVIGATION_BARS | APPEARANCE_LIGHT_STATUS_BARS;
+        const jint mask = APPEARANCE_LIGHT_NAVIGATION_BARS | APPEARANCE_LIGHT_STATUS_BARS | APPEARANCE_LIGHT_CAPTION_BARS;
         controller.callMethod<void>("setSystemBarsAppearance", "(II)V", static_cast<jint>(nightMode ? 0 : mask), mask);
     } else if (ver >= 26) {
         QJniObject window = getWindow();
@@ -807,7 +808,7 @@ void AndroidTheme::setSystemBarsNightMode(bool nightMode, QJniObject &decorView)
         if (window.isValid() == false || res.isValid() == false) {
             return;
         }
-        jint color = res.callMethod<jint>("getColor", "(ILandroid/content/res/Resources$Theme;)I", static_cast<jint>(nightMode ? R_color_darker_gray : R_color_white), nullptr);
+        jint color = res.callMethod<jint>("getColor", "(ILandroid/content/res/Resources$Theme;)I", static_cast<jint>(nightMode ? R_color_background_dark : R_color_background_light), nullptr);
         window.callMethod<void>("setNavigationBarColor", "(I)V", color);
         window.callMethod<void>("setStatusBarColor", "(I)V", color);
         decorView.callMethod<void>("setSystemUiVisibility", "(I)V", static_cast<jint>(nightMode ? SYSTEM_UI_FLAG_LAYOUT_STABLE : SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR));

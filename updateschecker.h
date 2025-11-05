@@ -32,10 +32,10 @@ public:
     virtual ~UpdatesChecker();
     void run();
 
-signals:
+Q_SIGNALS:
     void updatesAvailable();
 
-private slots:
+private Q_SLOTS:
     void updatedDataReady(QNetworkReply *reply);
 
 private:

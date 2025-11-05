@@ -50,7 +50,7 @@ public:
     void fillFromItem(QStandardItem *item);
     // void setAsRemoteBuddy(QString ip);
 
-signals:
+Q_SIGNALS:
     void ipChanged();
     void portChanged();
     void usernameChanged();
@@ -60,8 +60,6 @@ signals:
     void avatarChanged();
     void osLogoChanged();
     void showBackChanged();
-
-public slots:
 
 private:
     QString mIp;

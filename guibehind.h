@@ -120,13 +120,10 @@ public:
     QString initErrorAction();
     QMargins screenPadding();
 
-public slots:
-    void updateScreenPadding();
-
 protected:
     bool eventFilter(QObject *, QEvent *event) override;
 
-signals:
+Q_SIGNALS:
     void currentTransferBuddyChanged();
     void currentTransferProgressChanged();
     void currentTransferStatsChanged();
@@ -162,7 +159,7 @@ signals:
     void gotoProfilePage();
     void hideAllOverlays();
 
-public slots:
+public Q_SLOTS:
     // Called by Dukto protocol
     void peerListAdded(const Peer &peer);
     void peerListRemoved(const Peer &peer);
@@ -177,6 +174,10 @@ public slots:
     void sendFileError(const QString &error);
     void receiveFileCancelled(const QString &error);
     void sendFileAborted();
+
+    // Called by DuktoWindow
+    void updateScreenPadding();
+    void updateColorScheme(bool darkMode);
 
     // Called by QML
     void openDestinationFolder();
@@ -203,7 +204,7 @@ public slots:
     void resetBuddy();
     QString version();
 
-private slots:
+private Q_SLOTS:
     void showRandomBack();
     void clipboardChanged();
     void remoteDestinationAddressHandler();

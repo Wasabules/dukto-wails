@@ -67,7 +67,7 @@ public:
 
     static const QString DEFAULT_THEME_COLOR;
 
-signals:
+Q_SIGNALS:
     void themeColorChanged();
     void themeLighterColorChanged();
     void themeDarkerColorChanged();
@@ -83,7 +83,7 @@ signals:
     void borderColorChanged();
     void disabledColorChanged();
 
-public slots:
+public Q_SLOTS:
     float getHue(const QString &color);
     float getSaturation(const QString &color);
     float getLightness(const QString &color);

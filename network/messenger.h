@@ -46,11 +46,11 @@ public:
     void sayHello(const QHostAddress &target, quint16 port);
     void sayGoodbye();
 
-signals:
+Q_SIGNALS:
     void buddyFound(Peer peer);
     void buddyGone(Peer peer);
 
-private slots:
+private Q_SLOTS:
     void processDatagram();
 
 private:

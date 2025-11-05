@@ -37,14 +37,14 @@ public:
     void sendText(const QString &text);
     void abort();
 
-signals:
+Q_SIGNALS:
     void started(qint64 totalSize);
     void progress(qint64 total, qint64 sent);
     void itemProgress(qint64 total, qint64 current, QString name);
     void completed();
     void aborted(QString error);
 
-private slots:
+private Q_SLOTS:
     void sendData();
     void connectionError(QAbstractSocket::SocketError error);
 
