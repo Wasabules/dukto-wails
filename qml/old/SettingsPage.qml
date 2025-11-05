@@ -264,7 +264,7 @@ Flickable {
             anchors.left: labelPath.left
             anchors.topMargin: 25
             text: "Enable Dark Mode"
-            checked: theme.darkMode
+            checked: guiBehind.darkMode
             onClicked: guiBehind.darkMode = checked
         }
     }
