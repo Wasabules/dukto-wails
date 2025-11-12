@@ -21,8 +21,8 @@
 
 #include <QObject>
 
-#if defined(Q_OS_LINUX) && defined(GSETTINGS_SUPPORT)
-class QGSettings;
+#if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
+#include <QtDBus/QDBusVariant>
 #endif
 
 class QWindow;
@@ -41,6 +41,12 @@ public:
 private:
     friend class PlatformObserver;
 
+    enum ThemeScheme {
+        UnknownTheme,
+        LightTheme,
+        DarkTheme
+    };
+
     Platform() = default;
     static QString getSystemUsername();
 #if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
@@ -51,9 +57,9 @@ private:
     static QString getWinTempAvatarPath();
 #endif
 #if defined(Q_OS_WIN)
-    static int isWinDarkTheme();
-#elif defined(Q_OS_LINUX) && defined(GSETTINGS_SUPPORT)
-    static int isGSettingsDarkTheme(QGSettings *gs);
+    static ThemeScheme getWinThemeScheme();
+#elif defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
+    static ThemeScheme getLinuxThemeSchemeFromXdgPortal();
 #endif
 #if !defined(Q_OS_ANDROID)
     static QString env(const QString &name);
@@ -71,22 +77,21 @@ public:
     explicit PlatformObserver(QObject *parent = nullptr);
     virtual ~PlatformObserver();
 
-#if QT_VERSION < QT_VERSION_CHECK(6, 5, 0) && defined(Q_OS_WIN)
+#if defined(Q_OS_WIN)
     bool winEvent(MSG *message, void *result);
 #endif
-
 
 Q_SIGNALS:
     void colorSchemeChanged(bool darkMode);
 
 private:
     void observe();
-#if QT_VERSION < QT_VERSION_CHECK(6, 5, 0)
-#if defined(Q_OS_LINUX) && defined(GSETTINGS_SUPPORT)
-    QGSettings *gsettings;
-    void gsettingsChanged(const QString &key);
+
+#if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
+private Q_SLOTS:
+    void dbusChanged(QString ns, QString key, QDBusVariant value);
 #endif
-#endif
+
 };
 
 

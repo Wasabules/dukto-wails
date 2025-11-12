@@ -18,16 +18,10 @@ DEFINES += SINGLE_APP
 # Use libnotify for notifications (Linux only)
 #DEFINES += NOTIFY_LIBNOTIFY
 
-# Use GSettings-Qt for reading GTK settings (Linux only)
-DEFINES += GSETTINGS_SUPPORT
-# Use system's GSettings-Qt library (Linux only)
-#DEFINES += SYSTEM_GSETTINGS_QT
-
 #==========================================
 
 android: {
     DEFINES -= NOTIFY_LIBNOTIFY
-    DEFINES -= GSETTINGS_SUPPORT
     DEFINES -= SINGLE_APP
     DEFINES += MOBILE_APP
 } else {
@@ -35,7 +29,6 @@ android: {
 }
 !linux: {
     DEFINES -= NOTIFY_LIBNOTIFY
-    DEFINES -= GSETTINGS_SUPPORT
 }
 
 TARGET = dukto
@@ -125,25 +118,6 @@ contains(DEFINES, SINGLE_APP) {
 contains(DEFINES, NOTIFY_LIBNOTIFY) {
     CONFIG += link_pkgconfig
     PKGCONFIG += libnotify
-}
-
-contains(DEFINES, GSETTINGS_SUPPORT) {
-    CONFIG += link_pkgconfig
-    contains(DEFINES, SYSTEM_GSETTINGS_QT) {
-        PKGCONFIG += gsettings-qt
-    } else {
-        DEFINES += QT_NO_SIGNALS_SLOTS_KEYWORDS
-        SOURCES += \
-            modules/gsettings-qt/src/qconftypes.cpp \
-            modules/gsettings-qt/src/qgsettings.cpp \
-            modules/gsettings-qt/src/util.cpp
-        HEADERS += \
-            modules/gsettings-qt/src/qconftypes.h \
-            modules/gsettings-qt/src/qgsettings.h \
-            modules/gsettings-qt/src/util.h
-        QMAKE_INCDIR += modules/gsettings-qt/src
-        PKGCONFIG += gio-2.0
-    }
 }
 
 OTHER_FILES += CMakeLists.txt dukto.rc

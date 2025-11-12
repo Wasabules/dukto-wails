@@ -1,6 +1,3 @@
 [submodule "modules/SingleApplication"]
 	path = modules/SingleApplication
 	url = https://github.com/itay-grudev/SingleApplication.git
-[submodule "modules/gsettings-qt"]
-	path = modules/gsettings-qt
-	url = https://salsa.debian.org/ubports-team/gsettings-qt.git

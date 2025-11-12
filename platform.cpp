@@ -51,17 +51,21 @@
 
 #if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
 #include <QtDBus/QDBusInterface>
+#include <QtDBus/QDBusReply>
 #include <QUrl>
 #include <unistd.h>
 #include <sys/types.h>
+
+#define DBUS_PORTAL_SERVICE "org.freedesktop.portal.Desktop"
+#define DBUS_PORTAL_PATH "/org/freedesktop/portal/desktop"
+#define DBUS_PORTAL_SETTINGS_INTERFACE "org.freedesktop.portal.Settings"
+#define PORTAL_SETTINGS_NAMESPACE "org.freedesktop.appearance"
+#define COLOR_SCHEME_KEY "color-scheme"
+
 #endif
 
 #if defined(Q_OS_ANDROID)
 #include "androidutils.h"
-#endif
-
-#if defined(GSETTINGS_SUPPORT)
-#include <qgsettings.h>
 #endif
 
 // Returns the buddy name
@@ -309,43 +313,66 @@ QString Platform::getWinTempAvatarPath()
 #endif
 
 #if defined(Q_OS_WIN)
-int Platform::isWinDarkTheme() {
+Platform::ThemeScheme Platform::getWinDarkTheme() {
     DWORD buffer;
     DWORD cbData = sizeof(buffer);
     LSTATUS res = RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", L"AppsUseLightTheme", RRF_RT_REG_DWORD, NULL, &buffer, &cbData);
     if (res == ERROR_SUCCESS) {
-        return (buffer == 1 ? 0 : 1);
+        return (buffer == 1 ? DarkTheme : LightTheme);
     }
-    return -1;
+    return UnknownTheme;
 }
 #endif
 
-
-#if defined(Q_OS_LINUX) && defined(GSETTINGS_SUPPORT)
-int Platform::isGSettingsDarkTheme(QGSettings *gs) {
-    QString gtkColorScheme = gs->get("color-scheme").toString();
-    if (gtkColorScheme == "prefer-dark") {
-        return 1;
-    } else if (gtkColorScheme == "prefer-light") {
-        return 0;
+#if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
+Platform::ThemeScheme Platform::getLinuxThemeSchemeFromXdgPortal() {
+    // https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Settings.html
+    QDBusInterface iface(DBUS_PORTAL_SERVICE, DBUS_PORTAL_PATH, DBUS_PORTAL_SETTINGS_INTERFACE, QDBusConnection::sessionBus());
+    if (iface.isValid() == false) {
+        return UnknownTheme;
+    }
+    bool v1 = false;
+    QDBusMessage reply = iface.call("ReadOne", PORTAL_SETTINGS_NAMESPACE, COLOR_SCHEME_KEY);
+    if (reply.type() == QDBusMessage::ErrorMessage) {
+        // Deprecated method
+        reply = iface.call("Read", PORTAL_SETTINGS_NAMESPACE, COLOR_SCHEME_KEY);
+        if (reply.type() == QDBusMessage::ErrorMessage) {
+            return UnknownTheme;
+        }
+        v1 = true;
+    }
+    QVariantList args = reply.arguments();
+    if (args.isEmpty()) {
+        return UnknownTheme;
+    }
+    QVariant var;
+    if (v1) {
+        var = reply.arguments().at(0).value<QDBusVariant>().variant().value<QDBusVariant>().variant();
     } else {
-        // default
-        QString gtkTheme = gs->get("gtk-theme").toString();
-        if (gtkTheme.endsWith("-dark"), Qt::CaseInsensitive) {
-            return 1;
+        var = reply.arguments().at(0).value<QDBusVariant>().variant();
+    }
+    bool ok;
+    int value = var.toInt(&ok);
+    if (ok) {
+        // 0: No preference
+        // 1: Prefer dark
+        // 2: Prefer light
+        if (value == 1) {
+            return DarkTheme;
+        } else if (value == 2) {
+            return LightTheme;
         }
     }
-    return -1;
+    return UnknownTheme;
 }
 #endif
 
-#if !defined(Q_OS_ANDROID)
 
+#if !defined(Q_OS_ANDROID)
 QString Platform::env(const QString &name) {
     static const QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
     return env.value(name);
 }
-
 #endif
 
 void Platform::setNonClientAreaMode(QWindow *win, bool darkMode) {
@@ -385,24 +412,21 @@ bool Platform::isDarkTheme() {
         return false;
     }
 #endif
+
 #if defined(Q_OS_WIN)
-    int r = isWinDarkTheme();
-    if (r != -1) {
-        return r == 1;
-    }
-#elif defined(Q_OS_ANDROID)
-    return AndroidTheme::isNightMode();
-#elif defined(Q_OS_LINUX)
-#ifdef GSETTINGS_SUPPORT
-    const QByteArray schema = "org.gnome.desktop.interface";
-    if (QGSettings::isSchemaInstalled(schema)) {
-        QGSettings gsettings(schema);
-        int r = isGSettingsDarkTheme(&gsettings);
-        if (r >= 0) {
-            return r == 1;
-        }
+    ThemeScheme r = getWinThemeScheme();
+    if (r != UnknownTheme) {
+        return r == DarkTheme;
     }
 #endif
+
+#if defined(Q_OS_ANDROID)
+    return AndroidTheme::isNightMode();
+#elif defined(Q_OS_LINUX)
+    ThemeScheme r = getLinuxThemeSchemeFromXdgPortal();
+    if (r != UnknownTheme) {
+        return r == DarkTheme;
+    }
 #endif
     return false;
 }
@@ -412,34 +436,24 @@ PlatformObserver::PlatformObserver(QObject *parent) : QObject(parent) {
 }
 
 PlatformObserver::~PlatformObserver() {
-#if QT_VERSION < QT_VERSION_CHECK(6, 5, 0) && defined(Q_OS_LINUX) && defined(GSETTINGS_SUPPORT)
-    delete gsettings;
-#endif
 }
 
 void PlatformObserver::observe() {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     const QStyleHints *hints = QGuiApplication::styleHints();
     connect(hints, &QStyleHints::colorSchemeChanged, this, [this](Qt::ColorScheme cs) {
+        qDebug() << "colorSchemeChanged" << cs;
         emit colorSchemeChanged(cs == Qt::ColorScheme::Dark);
     });
-#else
+#endif
 
-#ifdef Q_OS_LINUX
-#ifdef GSETTINGS_SUPPORT
-    const QByteArray schema = "org.gnome.desktop.interface";
-    if (QGSettings::isSchemaInstalled(schema)) {
-        gsettings = new QGSettings(schema);
-        connect(gsettings, &QGSettings::changed, this, &PlatformObserver::gsettingsChanged);
+#if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
+    QDBusConnection conn = QDBusConnection::sessionBus();
+    if (conn.isConnected()) {
+        conn.connect(DBUS_PORTAL_SERVICE, DBUS_PORTAL_PATH, DBUS_PORTAL_SETTINGS_INTERFACE, "SettingChanged", this, SLOT(dbusChanged(QString,QString,QDBusVariant)));
     }
 #endif
-#endif
-
-#endif
 }
-
-
-#if QT_VERSION < QT_VERSION_CHECK(6, 5, 0)
 
 #ifdef Q_OS_WIN
 bool PlatformObserver::winEvent(MSG *message, void *result) {
@@ -447,24 +461,26 @@ bool PlatformObserver::winEvent(MSG *message, void *result) {
     if (message->message == WM_SETTINGCHANGE) {
         LPTSTR str = reinterpret_cast<LPTSTR>(message->lParam);
         if (lstrcmp(str, L"ImmersiveColorSet") == 0) {
-            emit colorSchemeChanged(Platform::isWinDarkTheme());
+            emit colorSchemeChanged(Platform::getWinThemeScheme() == Platform::DarkTheme);
         }
     }
     return false;
 }
 #endif
 
-#if defined(Q_OS_LINUX) && defined(GSETTINGS_SUPPORT)
-
-void PlatformObserver::gsettingsChanged(const QString &key) {
-    if (key == "color-scheme" || (key == "gtk-theme" && gsettings->get("color-scheme").toString() == "default")) {
-        int r = Platform::isGSettingsDarkTheme(gsettings);
-        if (r >= 0) {
-            emit colorSchemeChanged(r == 1);
+#if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
+void PlatformObserver::dbusChanged(QString ns, QString key, QDBusVariant value) {
+    if (ns == PORTAL_SETTINGS_NAMESPACE && key == COLOR_SCHEME_KEY) {
+        QVariant variant = value.variant();
+        bool ok;
+        int v = variant.toInt(&ok);
+        if (!ok) {
+            return;
         }
+        // 0: No preference
+        // 1: Prefer dark
+        // 2: Prefer light
+        emit colorSchemeChanged(v == 1);
     }
 }
-
-#endif
-
 #endif
