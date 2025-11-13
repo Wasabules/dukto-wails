@@ -714,7 +714,6 @@ void GuiBehind::resetProgressStatus()
 void GuiBehind::discoveryNeighbors()
 {
     mDuktoProtocol.greeting();
-    Platform::setNonClientAreaMode(nullptr, Platform::isDarkTheme());
 }
 
 // Show updates message

@@ -313,12 +313,12 @@ QString Platform::getWinTempAvatarPath()
 #endif
 
 #if defined(Q_OS_WIN)
-Platform::ThemeScheme Platform::getWinDarkTheme() {
+Platform::ThemeScheme Platform::getWinThemeScheme() {
     DWORD buffer;
     DWORD cbData = sizeof(buffer);
     LSTATUS res = RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", L"AppsUseLightTheme", RRF_RT_REG_DWORD, NULL, &buffer, &cbData);
     if (res == ERROR_SUCCESS) {
-        return (buffer == 1 ? DarkTheme : LightTheme);
+        return (buffer == 1 ? LightTheme : DarkTheme);
     }
     return UnknownTheme;
 }
@@ -334,6 +334,10 @@ Platform::ThemeScheme Platform::getLinuxThemeSchemeFromXdgPortal() {
     bool v1 = false;
     QDBusMessage reply = iface.call("ReadOne", PORTAL_SETTINGS_NAMESPACE, COLOR_SCHEME_KEY);
     if (reply.type() == QDBusMessage::ErrorMessage) {
+        QDBusError err(reply);
+        if (err.type() != QDBusError::UnknownMethod) {
+            return UnknownTheme;
+        }
         // Deprecated method
         reply = iface.call("Read", PORTAL_SETTINGS_NAMESPACE, COLOR_SCHEME_KEY);
         if (reply.type() == QDBusMessage::ErrorMessage) {
@@ -403,7 +407,7 @@ void Platform::setNonClientAreaMode(QWindow *win, bool darkMode) {
 }
 
 bool Platform::isDarkTheme() {
-#if 0 && QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     const QStyleHints *hints = QGuiApplication::styleHints();
     const Qt::ColorScheme qtColorScheme = hints->colorScheme();
     if (qtColorScheme == Qt::ColorScheme::Dark) {
@@ -481,6 +485,15 @@ void PlatformObserver::dbusChanged(QString ns, QString key, QDBusVariant value) 
         // 1: Prefer dark
         // 2: Prefer light
         emit colorSchemeChanged(v == 1);
+    } else if (ns == "org.kde.kdeglobals.General" && key == "ColorScheme") {
+        if (Platform::getLinuxThemeSchemeFromXdgPortal() == Platform::UnknownTheme) {
+            QString themeName = value.variant().toString();
+            if (themeName.endsWith("Dark", Qt::CaseInsensitive)) {
+                emit colorSchemeChanged(true);
+            } else {
+                emit colorSchemeChanged(false);
+            }
+        }
     }
 }
 #endif
