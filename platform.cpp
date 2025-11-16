@@ -34,6 +34,7 @@
 #if defined(Q_OS_MAC)
 #include <QTemporaryFile>
 #include <CoreServices/CoreServices.h>
+#include <CoreFoundation/CoreFoundation.h>
 #endif
 
 #if defined(Q_OS_WIN)
@@ -371,6 +372,23 @@ Platform::ThemeScheme Platform::getLinuxThemeSchemeFromXdgPortal() {
 }
 #endif
 
+#if defined(Q_OS_MAC)
+Platform::ThemeScheme Platform::getMacThemeScheme() {
+    CFStringRef styleKey = CFSTR("AppleInterfaceStyle");
+    CFPropertyListRef styleValue = CFPreferencesCopyValue(styleKey, kCFPreferencesAnyApplication, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
+    if (styleValue == NULL) {
+        return LightTheme;
+    }
+    bool isDark = false;
+    if (CFGetTypeID(styleValue) == CFStringGetTypeID()) {
+        if (CFStringCompare((CFStringRef)styleValue, CFSTR("Dark"), 0) == kCFCompareEqualTo) {
+            isDark = true;
+        }
+    }
+    CFRelease(styleValue);
+    return isDark ? DarkTheme : UnknownTheme;
+}
+#endif
 
 #if !defined(Q_OS_ANDROID)
 QString Platform::env(const QString &name) {
@@ -417,23 +435,28 @@ bool Platform::isDarkTheme() {
     }
 #endif
 
-#if defined(Q_OS_WIN)
-    ThemeScheme r = getWinThemeScheme();
-    if (r != UnknownTheme) {
-        return r == DarkTheme;
-    }
-#endif
-
 #if defined(Q_OS_ANDROID)
     return AndroidTheme::isNightMode();
-#elif defined(Q_OS_LINUX)
-    ThemeScheme r = getLinuxThemeSchemeFromXdgPortal();
+#endif
+
+    ThemeScheme r = UnknownTheme;
+#if defined(Q_OS_WIN)
+    r = getWinThemeScheme();
+#elif defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
+    r = getLinuxThemeSchemeFromXdgPortal();
+#elif defined(Q_OS_MAC)
+    r = getMacThemeScheme();
+#endif
     if (r != UnknownTheme) {
         return r == DarkTheme;
     }
-#endif
     return false;
 }
+
+#if defined(Q_OS_MAC)
+PlatformObserver *obsInst = nullptr;
+#endif
+
 
 PlatformObserver::PlatformObserver(QObject *parent) : QObject(parent) {
     observe();
@@ -446,7 +469,6 @@ void PlatformObserver::observe() {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     const QStyleHints *hints = QGuiApplication::styleHints();
     connect(hints, &QStyleHints::colorSchemeChanged, this, [this](Qt::ColorScheme cs) {
-        qDebug() << "colorSchemeChanged" << cs;
         emit colorSchemeChanged(cs == Qt::ColorScheme::Dark);
     });
 #endif
@@ -456,6 +478,17 @@ void PlatformObserver::observe() {
     if (conn.isConnected()) {
         conn.connect(DBUS_PORTAL_SERVICE, DBUS_PORTAL_PATH, DBUS_PORTAL_SETTINGS_INTERFACE, "SettingChanged", this, SLOT(dbusChanged(QString,QString,QDBusVariant)));
     }
+#endif
+
+#if defined(Q_OS_MAC)
+    CFNotificationCenterRef nc = CFNotificationCenterGetDistributedCenter();
+    CFStringRef notification = CFSTR("AppleInterfaceThemeChangedNotification");
+    auto callback = [](CFNotificationCenterRef /*nc*/, void */*observer*/, CFStringRef /*notification*/, const void */*obj*/, CFDictionaryRef /*userInfo*/) {
+        Platform::ThemeScheme cs = Platform::getMacThemeScheme();
+        emit obsInst->colorSchemeChanged(cs == Platform::DarkTheme);
+    };
+    obsInst = this;
+    CFNotificationCenterAddObserver(nc, NULL, callback, notification, NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
 #endif
 }
 

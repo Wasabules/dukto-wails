@@ -60,6 +60,8 @@ private:
     static ThemeScheme getWinThemeScheme();
 #elif defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
     static ThemeScheme getLinuxThemeSchemeFromXdgPortal();
+#elif defined(Q_OS_MAC)
+    static ThemeScheme getMacThemeScheme();
 #endif
 #if !defined(Q_OS_ANDROID)
     static QString env(const QString &name);
