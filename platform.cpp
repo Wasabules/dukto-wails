@@ -254,18 +254,28 @@ QString Platform::getMacTempAvatarPath()
     // Get image data from system
     QByteArray qdata;
     CSIdentityQueryRef query = CSIdentityQueryCreateForCurrentUser(kCFAllocatorSystemDefault);
-    CFErrorRef error;
-	if (CSIdentityQueryExecute(query, kCSIdentityQueryGenerateUpdateEvents, &error)) {
+    if (query == NULL) {
+        return "";
+    }
+    if (CSIdentityQueryExecute(query, kCSIdentityQueryGenerateUpdateEvents, NULL)) {
         CFArrayRef foundIds = CSIdentityQueryCopyResults(query);
-        if (CFArrayGetCount(foundIds) == 1) {
-            CSIdentityRef userId = (CSIdentityRef) CFArrayGetValueAtIndex(foundIds, 0);
-            CFDataRef data = CSIdentityGetImageData(userId);
-            //qDebug() << CFDataGetLength(data);
-            qdata.resize(CFDataGetLength(data));
-            CFDataGetBytes(data, CFRangeMake(0, CFDataGetLength(data)), reinterpret_cast<uint8*>(qdata.data()));
+        if (foundIds != NULL) {
+            if (CFArrayGetCount(foundIds) == 1) {
+                CSIdentityRef userId = (CSIdentityRef) CFArrayGetValueAtIndex(foundIds, 0);
+                CFDataRef data = CSIdentityGetImageData(userId);
+                if (data != NULL) {
+                    qdata.resize(CFDataGetLength(data));
+                    CFDataGetBytes(data, CFRangeMake(0, CFDataGetLength(data)), reinterpret_cast<uint8*>(qdata.data()));
+                }
+            }
+            CFRelease(foundIds);
         }
     }
     CFRelease(query);
+
+    if (qdata.isEmpty()) {
+        return "";
+    }
 
     // Save it to a temporary file
     macAvatar.open();
