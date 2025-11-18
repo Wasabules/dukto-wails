@@ -54,7 +54,7 @@ private:
 #elif defined(Q_OS_MAC)
     static QString getMacTempAvatarPath();
 #elif defined(Q_OS_WIN)
-    static QString getWinTempAvatarPath();
+    static QString getWinAvatarPath();
 #endif
 #if defined(Q_OS_WIN)
     static ThemeScheme getWinThemeScheme();

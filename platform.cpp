@@ -39,7 +39,8 @@
 
 #if defined(Q_OS_WIN)
 #include <windows.h>
-#include <lmaccess.h>
+#include <shlobj.h>
+#include <lmcons.h> // for UNLEN
 #include <QLibrary>
 
 // undocumented, starting from Win10 1809, replaced from 20H2
@@ -80,25 +81,30 @@ QString Platform::getUsername()
 }
 
 // Returns the system username
-QString Platform::getSystemUsername()
-{
+QString Platform::getSystemUsername() {
     // Save in a static variable so that It's always ready
     static QString username;
     if (!username.isEmpty()) return username;
 
-#ifdef Q_OS_ANDROID
+#if defined(Q_OS_ANDROID)
     username = "User";
+#elif defined(Q_OS_WIN)
+    WCHAR buffer[UNLEN + 1] = {0};
+    DWORD len = UNLEN + 1;
+    if (GetUserName(buffer, &len) != 0) {
+        username = QString::fromWCharArray(buffer);
+    } else {
+        username = env("USERNAME");
+    }
 #else
     // Looking for the username
-    QString uname(env("USERNAME"));
-    if (uname.isEmpty())
-    {
-        uname = env("USER");
-        if (uname.isEmpty())
-            uname = "Unknown";
-    }
-    username = uname.replace(0, 1, uname.at(0).toUpper());
+    username = env("USER");
 #endif
+    if (username.isEmpty()) {
+        username = "Unknown";
+    } else {
+        username = username.replace(0, 1, username.at(0).toUpper());
+    }
     return username;
 }
 
@@ -156,17 +162,7 @@ QString Platform::getAvatarPath()
 
     // default avatar
 #if defined(Q_OS_WIN)
-    QString username = getSystemUsername().replace("\\", "+");
-    QString path = env("LOCALAPPDATA") + "\\Temp\\" + username + ".bmp";
-    if (!QFile::exists(path))
-        path = getWinTempAvatarPath();
-    if (!QFile::exists(path))
-        path = env("PROGRAMDATA") + "\\Microsoft\\User Account Pictures\\Guest.bmp";
-    if (!QFile::exists(path))
-        path = env("ALLUSERSPROFILE") + "\\" + QDir(env("APPDATA")).dirName() + "\\Microsoft\\User Account Pictures\\" + username + ".bmp";
-    if (!QFile::exists(path))
-        path = env("ALLUSERSPROFILE") + "\\" + QDir(env("APPDATA")).dirName() + "\\Microsoft\\User Account Pictures\\Guest.bmp";
-    return path;
+    return getWinAvatarPath();
 #elif defined(Q_OS_MAC)
     return getMacTempAvatarPath();
 #elif defined(Q_OS_ANDROID)
@@ -183,7 +179,12 @@ QString Platform::getDefaultPath()
 {
     // For Windows it's the Desktop folder
 #if defined(Q_OS_WIN)
-    return env("USERPROFILE") + "\\Desktop";
+    WCHAR dir[1024];
+    if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_DESKTOPDIRECTORY, NULL, 0, dir))) {
+        return QString::fromWCharArray(dir);
+    } else {
+        return env("USERPROFILE") + "\\Desktop";
+    }
 #elif defined(Q_OS_MAC)
     return env("HOME") + "/Desktop";
 #elif defined(Q_OS_ANDROID)
@@ -295,6 +296,8 @@ QString Platform::getMacTempAvatarPath()
   static_cast<size_t>(!(sizeof(a) % sizeof(*(a)))))
 #endif
 
+// Undocumented function for Windows Vista+
+// http://undoc.airesoft.co.uk/shell32.dll/SHGetUserPicturePathEx.php
 typedef HRESULT (WINAPI*pfnSHGetUserPicturePathEx)(
     LPCWSTR pwszUserOrPicName,
     DWORD sguppFlags,
@@ -305,33 +308,107 @@ typedef HRESULT (WINAPI*pfnSHGetUserPicturePathEx)(
     UINT srcLen
 );
 
-// Special function for Windows 8
-QString Platform::getWinTempAvatarPath()
-{
-    // Get file path
-    CoInitialize(nullptr);
-    HMODULE hMod = LoadLibrary(L"shell32.dll");
-    pfnSHGetUserPicturePathEx picPathFn = (pfnSHGetUserPicturePathEx)GetProcAddress(hMod, (LPCSTR)810);
-    WCHAR picPath[500] = {0}, srcPath[500] = {0};
-    HRESULT ret = picPathFn(nullptr, 0, nullptr, picPath, ARRAYSIZE(picPath), srcPath, ARRAYSIZE(srcPath));
-    FreeLibrary(hMod);
+// Undocumented function for Windows XP/2003
+// http://undoc.airesoft.co.uk/shell32.dll/SHGetUserPicturePath.php
+typedef HRESULT (WINAPI*pfnSHGetUserPicturePathW)(
+    LPCWSTR pwszPicOrUserName,
+    DWORD sguppFlags,
+    LPWSTR pwszPicPath
+);
+
+#ifndef LOAD_LIBRARY_SEARCH_SYSTEM32
+#define LOAD_LIBRARY_SEARCH_SYSTEM32 0x00000800
+#endif
+
+QString Platform::getWinAvatarPath() {
+    static const bool isVistaOrLater = ((LOBYTE(LOWORD(GetVersion()))) >= 6);
+    CoInitialize(NULL);
+
+    QString path;
+    HMODULE hMod = LoadLibraryEx(L"shell32.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (hMod != NULL) {
+        if (isVistaOrLater) {
+            // Vista+
+            pfnSHGetUserPicturePathEx SHGetUserPicturePathEx = (pfnSHGetUserPicturePathEx)GetProcAddress(hMod, (LPCSTR)810);
+            if (SHGetUserPicturePathEx != nullptr) {
+                WCHAR picPath[1024] = {0};
+                if (SHGetUserPicturePathEx(NULL, 0, NULL, picPath, ARRAYSIZE(picPath), NULL, 0) == S_OK) {
+                    path = QString::fromWCharArray(picPath);
+                }
+            }
+        } else {
+            pfnSHGetUserPicturePathW SHGetUserPicturePathW = (pfnSHGetUserPicturePathW)GetProcAddress(hMod, (LPCSTR)233);
+            if (SHGetUserPicturePathW != nullptr) {
+                WCHAR picPath[1024] = {0};
+                if (SHGetUserPicturePathW(NULL, 0, picPath) == S_OK) {
+                    path = QString::fromWCharArray(picPath);
+                }
+            }
+        }
+        FreeLibrary(hMod);
+    }
+
+    if (QFile::exists(path) == false) {
+        path.clear();
+        QStringList searchPaths;
+        QString userPic = getSystemUsername().replace("\\", "+") + ".bmp";
+        QString guestPic = "guest.bmp";
+        QString dir;
+
+        if (isVistaOrLater) {
+            WCHAR picPath[1024];
+            if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, picPath))) {
+                dir = QString::fromWCharArray(picPath) + "\\Temp\\";
+            } else {
+                dir = env("LOCALAPPDATA") + "\\Temp\\";
+            }
+            searchPaths << dir + userPic;
+            if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_COMMON_APPDATA, NULL, 0, picPath))) {
+                dir = QString::fromWCharArray(picPath) + "\\Microsoft\\User Account Pictures\\";
+            } else {
+                dir = env("ALLUSERSPROFILE") + "\\Microsoft\\User Account Pictures\\";
+            }
+            searchPaths << dir + guestPic;
+        } else {
+            WCHAR picPath[1024];
+            if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_COMMON_APPDATA, NULL, 0, picPath))) {
+                dir = QString::fromWCharArray(picPath) + "\\Microsoft\\User Account Pictures\\";
+            } else {
+                dir = env("ALLUSERSPROFILE") + "\\Application Data\\Microsoft\\User Account Pictures\\";
+            }
+            searchPaths << dir + userPic;
+            searchPaths << dir + guestPic;
+        }
+
+        for (const QString &pic : searchPaths) {
+            if (QFile::exists(pic)) {
+                path = pic;
+                break;
+            }
+        }
+    }
+
     CoUninitialize();
-    if (ret != S_OK) return "C:\\missing.bmp";
-    QString result = QString::fromWCharArray(picPath, -1);
-    return result;
+    return path;
 }
 
 #endif
 
 #if defined(Q_OS_WIN)
 Platform::ThemeScheme Platform::getWinThemeScheme() {
-    DWORD buffer;
-    DWORD cbData = sizeof(buffer);
-    LSTATUS res = RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", L"AppsUseLightTheme", RRF_RT_REG_DWORD, NULL, &buffer, &cbData);
-    if (res == ERROR_SUCCESS) {
-        return (buffer == 1 ? LightTheme : DarkTheme);
+    ThemeScheme scheme = UnknownTheme;
+    HKEY hKey;
+    if (RegOpenKeyEx(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        DWORD type, value, cbData = sizeof(value);
+        if (RegQueryValueEx(hKey, L"AppsUseLightTheme", NULL, &type, reinterpret_cast<BYTE*>(&value), &cbData) == ERROR_SUCCESS) {
+            // other types may also take effect, but we don't care
+            if (type == REG_DWORD) {
+                scheme = (value == 0 ? DarkTheme : LightTheme);
+            }
+        }
+        RegCloseKey(hKey);
     }
-    return UnknownTheme;
+    return scheme;
 }
 #endif
 
@@ -411,18 +488,22 @@ void Platform::setNonClientAreaMode(QWindow *win, bool darkMode) {
 #if defined(Q_OS_WIN)
     QLibrary lib("dwmapi.dll");
     if (lib.load()) {
-        typedef HRESULT (WINAPI *DwmSetWindowAttribute)(HWND,DWORD,LPCVOID,DWORD); // WinVista+
-        DwmSetWindowAttribute pDwmSetWindowAttribute = reinterpret_cast<DwmSetWindowAttribute>(lib.resolve("DwmSetWindowAttribute"));
-        if (pDwmSetWindowAttribute != nullptr) {
+        typedef HRESULT (WINAPI *fnDwmSetWindowAttribute)(HWND,DWORD,LPCVOID,DWORD); // WinVista+
+        fnDwmSetWindowAttribute DwmSetWindowAttribute = reinterpret_cast<fnDwmSetWindowAttribute>(lib.resolve("DwmSetWindowAttribute"));
+        if (DwmSetWindowAttribute != nullptr) {
             HWND hWnd = reinterpret_cast<HWND>(win->winId());
             BOOL value = darkMode ? TRUE : FALSE;
-            pDwmSetWindowAttribute(hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE_OLD, &value, sizeof(value));
-            pDwmSetWindowAttribute(hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &value, sizeof(value));
-            // force redraw
-            RECT rect;
-            GetWindowRect(hWnd, &rect);
-            SetWindowPos(hWnd, 0, 0, 0, rect.right - rect.left, rect.bottom - rect.top + 1, SWP_NOREDRAW|SWP_NOACTIVATE|SWP_NOMOVE|SWP_NOZORDER);
-            SetWindowPos(hWnd, 0, 0, 0, rect.right - rect.left, rect.bottom - rect.top, SWP_DRAWFRAME|SWP_NOACTIVATE|SWP_NOMOVE|SWP_NOZORDER);
+            HRESULT ret = DwmSetWindowAttribute(hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &value, sizeof(value));
+            if (ret != S_OK) {
+                ret = DwmSetWindowAttribute(hWnd, DWMWA_USE_IMMERSIVE_DARK_MODE_OLD, &value, sizeof(value));
+            }
+            if (ret == S_OK) {
+                // force redraw
+                RECT rect;
+                GetWindowRect(hWnd, &rect);
+                SetWindowPos(hWnd, 0, 0, 0, rect.right - rect.left, rect.bottom - rect.top + 1, SWP_NOREDRAW|SWP_NOACTIVATE|SWP_NOMOVE|SWP_NOZORDER);
+                SetWindowPos(hWnd, 0, 0, 0, rect.right - rect.left, rect.bottom - rect.top, SWP_DRAWFRAME|SWP_NOACTIVATE|SWP_NOMOVE|SWP_NOZORDER);
+            }
         }
     }
 #elif defined(Q_OS_ANDROID)
