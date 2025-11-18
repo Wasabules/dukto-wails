@@ -165,10 +165,8 @@ Rectangle {
                 border.width: 2
 
                 Image {
-                    anchors.left: parent.left
-                    anchors.leftMargin: 2
-                    anchors.top: parent.top
-                    anchors.topMargin: 2
+                    anchors.fill: parent
+                    anchors.margins: 2
                     source: guiBehind.buddyAvatar
                     sourceSize.height: 64
                     sourceSize.width: 64
