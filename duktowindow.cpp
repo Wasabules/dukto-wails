@@ -38,6 +38,11 @@
 static DuktoWindow *instance = nullptr;
 #endif
 
+#ifdef DESKTOP_APP
+#include <QCoreApplication>
+#include <QDir>
+#endif
+
 DuktoWindow::DuktoWindow(GuiBehind *gb, QQuickWidget *parent) :
     QQuickWidget(parent), mGuiBehind(gb)
 {
@@ -75,6 +80,14 @@ DuktoWindow::DuktoWindow(GuiBehind *gb, QQuickWidget *parent) :
             mGuiBehind->updateScreenPadding();
         }
     });
+#endif
+
+#ifdef DESKTOP_APP
+    // QtQuick module failed to load on older Qt5 versions
+    QDir qmlDir(qApp->applicationDirPath());
+    if (qmlDir.cd("qml")) {
+        engine()->addImportPath(qmlDir.path());
+    }
 #endif
 
     mObserver = new PlatformObserver();
