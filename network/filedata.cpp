@@ -58,7 +58,7 @@ bool FileData::isDir() const {
 
 void FileData::setName(const QString &newName) {
     if (newName.isEmpty() == false) {
-        name = newName.toUtf8().append('\0');
+        name = newName;
     }
 }
 
