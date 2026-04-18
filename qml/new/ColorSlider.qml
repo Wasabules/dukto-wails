@@ -1,5 +1,5 @@
 // Vertical "slider" control used in colorpicker
-import QtQuick 2.3
+import QtQuick 2.14
 Item {
     id: root
     property real value: NaN

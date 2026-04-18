@@ -1,5 +1,5 @@
 //  A toy QML colorpicker control, by Ruslan Shestopalyuk
-import QtQuick 2.3
+import QtQuick 2.14
 import "ColorUtils.js" as ColorUtils
 
 Rectangle {
