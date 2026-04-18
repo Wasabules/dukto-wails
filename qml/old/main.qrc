@@ -28,5 +28,6 @@
         <file>TermsPage.qml</file>
         <file>ToolBar.qml</file>
         <file>UpdatesBox.qml</file>
+        <file>ModeSwitch.qml</file>
     </qresource>
 </RCC>

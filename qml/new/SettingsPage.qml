@@ -282,12 +282,35 @@ Flickable {
         }
 
         CheckBox {
-            id: nswitch
-            visible: guiBehind.isDesktopApp()
+            id: tmswitch
             anchors.top: picker.bottom
             anchors.left: labelPath.left
-            anchors.topMargin: 30
-            text: "Enable Notification"
+            anchors.topMargin: 25
+            text: "Auto light/dark mode"
+            checked: guiBehind.autoMode
+
+            Connections {
+                function onClicked(checked) {
+                    guiBehind.autoMode = checked
+                }
+            }
+        }
+        ModeSwitch {
+            id: modeSwitch
+            visible: !tmswitch.checked
+            anchors.top: tmswitch.top
+            anchors.left: tmswitch.right
+            anchors.leftMargin: 10
+            anchors.topMargin: -6
+        }
+
+        CheckBox {
+            id: nswitch
+            visible: guiBehind.isDesktopApp()
+            anchors.top: tmswitch.bottom
+            anchors.left: labelPath.left
+            anchors.topMargin: 15
+            text: "Enable notification"
             checked: guiBehind.showNotification
 
             Connections {
@@ -302,28 +325,13 @@ Flickable {
             visible: guiBehind.isDesktopApp()
             anchors.top: nswitch.bottom
             anchors.left: labelPath.left
-            anchors.topMargin: 25
+            anchors.topMargin: 15
             text: "Minimize to system tray on close"
             checked: guiBehind.closeToTray
 
             Connections {
                 function onClicked(checked) {
                     guiBehind.closeToTray = checked
-                }
-            }
-        }
-
-        CheckBox {
-            id: dmwitch
-            anchors.top: cswitch.bottom
-            anchors.left: labelPath.left
-            anchors.topMargin: 25
-            text: "Enable Dark Mode"
-            checked: guiBehind.darkMode
-
-            Connections {
-                function onClicked(checked) {
-                    guiBehind.darkMode = checked
                 }
             }
         }

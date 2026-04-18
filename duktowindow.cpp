@@ -225,9 +225,17 @@ void DuktoWindow::showEvent(QShowEvent *event) {
         // Taskbar integration with Win7+
         mWin7 = new EcWin7(win);
         // Title bar color scheme
-        Platform::setNonClientAreaMode(win, gSettings->darkMode());
+        if (gSettings->autoMode()) {
+            Platform::setNonClientAreaMode(win, Platform::isDarkTheme());
+        } else {
+            Platform::setNonClientAreaMode(win, gSettings->darkMode());
+        }
 #elif defined(Q_OS_ANDROID)
-        Platform::setNonClientAreaMode(nullptr, gSettings->darkMode());
+        if (gSettings->autoMode()) {
+            Platform::setNonClientAreaMode(nullptr, Platform::isDarkTheme());
+        } else {
+            Platform::setNonClientAreaMode(nullptr, gSettings->darkMode());
+        }
 #endif
         debuted = true;
     }

@@ -85,6 +85,15 @@ QString Settings::themeColor()
     return mSettings.value("ThemeColor", Theme::DEFAULT_THEME_COLOR).toString();
 }
 
+void Settings::saveAutoMode(bool enabled) {
+    mSettings.setValue("AutoMode", enabled);
+    mSettings.sync();
+}
+
+bool Settings::autoMode() {
+    return mSettings.value("AutoMode", false).toBool();
+}
+
 void Settings::saveDarkMode(bool enabled) {
     mSettings.setValue("DarkMode", enabled);
     mSettings.sync();

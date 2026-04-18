@@ -28,5 +28,6 @@
         <file>ToolBar.qml</file>
         <file>UpdatesBox.qml</file>
         <file>ProfilePage.qml</file>
+        <file>ModeSwitch.qml</file>
     </qresource>
 </RCC>

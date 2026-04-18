@@ -235,13 +235,31 @@ Flickable {
             }
         }
 
+        CheckBox {
+            id: tmswitch
+            anchors.top: picker.bottom
+            anchors.left: labelPath.left
+            anchors.topMargin: 25
+            text: "Auto light/dark mode"
+            checked: guiBehind.autoMode
+            onClicked: guiBehind.autoMode = checked
+        }
+        ModeSwitch {
+            id: modeSwitch
+            visible: !tmswitch.checked
+            anchors.top: tmswitch.top
+            anchors.left: tmswitch.right
+            anchors.leftMargin: 30
+            anchors.topMargin: -24
+        }
+
 
         CheckBox {
             id: nswitch
             visible: guiBehind.isDesktopApp()
-            anchors.top: picker.bottom
+            anchors.top: tmswitch.bottom
             anchors.left: labelPath.left
-            anchors.topMargin: 30
+            anchors.topMargin: 15
             text: "Enable Notification"
             checked: guiBehind.showNotification
             onClicked: guiBehind.showNotification = checked
@@ -252,20 +270,10 @@ Flickable {
             visible: guiBehind.isDesktopApp()
             anchors.top: nswitch.bottom
             anchors.left: labelPath.left
-            anchors.topMargin: 25
+            anchors.topMargin: 15
             text: "Minimize to system tray on close"
             checked: guiBehind.closeToTray
             onClicked: guiBehind.closeToTray = checked
-        }
-
-        CheckBox {
-            id: dmwitch
-            anchors.top: cswitch.bottom
-            anchors.left: labelPath.left
-            anchors.topMargin: 25
-            text: "Enable Dark Mode"
-            checked: guiBehind.darkMode
-            onClicked: guiBehind.darkMode = checked
         }
     }
 }

@@ -20,6 +20,10 @@ import QtQuick 2.3
 
 Rectangle {
     id: checkbox
+    implicitWidth: indicator.implicitWidth + label.anchors.leftMargin + label.implicitWidth
+    implicitHeight: Math.max(indicator.implicitHeight, label.implicitHeight + label.anchors.topMargin)
+    color: "transparent"
+
     property bool checked: false
     property alias text: label.text
 
@@ -36,7 +40,7 @@ Rectangle {
         Rectangle {
             visible: checkbox.checked
             color: theme.themeLighterColor
-            anchors.margins: 3
+            anchors.margins: 4
             anchors.fill: parent
         }
 

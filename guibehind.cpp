@@ -78,9 +78,13 @@ GuiBehind::GuiBehind() : QObject(nullptr)
     // Set destination folder
     mDuktoProtocol.setDestDir(gSettings->destPath());
 
-    // Set current theme color
+    // Set current theme color & mode
     mTheme.setThemeColor(gSettings->themeColor());
-    mTheme.setDarkMode(gSettings->darkMode());
+    if (gSettings->autoMode()) {
+        setThemeMode(Platform::isDarkTheme());
+    } else {
+        setThemeMode(gSettings->darkMode());
+    }
 
     // Register protocol signals
     connect(&mDuktoProtocol, &DuktoProtocol::peerListAdded, this, &GuiBehind::peerListAdded);
@@ -976,20 +980,33 @@ bool GuiBehind::closeToTray() {
     return gSettings->closeToTrayEnabled();
 }
 
-void GuiBehind::setDarkMode(bool enabled) {
-    mTheme.setDarkMode(enabled);
-    if (mView != nullptr) {
-        QWindow *win = mView->windowHandle();
-        if (win != nullptr) {
-            Platform::setNonClientAreaMode(win, enabled);
-        }
+void GuiBehind::setAutoMode(bool enabled) {
+    bool darkMode;
+    if (enabled) {
+        darkMode = Platform::isDarkTheme();
+    } else {
+        darkMode = gSettings->darkMode();
     }
-    gSettings->saveDarkMode(enabled);
+    setThemeMode(darkMode);
+    gSettings->saveAutoMode(enabled);
+    emit autoModeChanged();
+}
+
+bool GuiBehind::autoMode() {
+    return gSettings->autoMode();
+}
+
+void GuiBehind::setDarkMode(bool darkMode) {
+    if (gSettings->autoMode()) {
+        return;
+    }
+    setThemeMode(darkMode);
+    gSettings->saveDarkMode(darkMode);
     emit darkModeChanged();
 }
 
 bool GuiBehind::darkMode() {
-    return mTheme.darkMode();
+    return gSettings->darkMode();
 }
 
 void GuiBehind::setInitError(const QString &error, const QString &action) {
@@ -1170,9 +1187,25 @@ QString GuiBehind::version() {
     return QLatin1String(VERSION_TEXT);
 }
 
-
-void GuiBehind::updateColorScheme(bool darkMode) {
-    if (darkMode != this->darkMode()) {
-        setDarkMode(darkMode);
+void GuiBehind::updateColorScheme(bool systemDarkMode) {
+    if (gSettings->autoMode() == false) {
+        return;
     }
+    if (systemDarkMode != mTheme.darkMode()) {
+        setThemeMode(systemDarkMode);
+    }
+}
+
+void GuiBehind::setThemeMode(bool darkMode) {
+    mTheme.setDarkMode(darkMode);
+#ifdef Q_OS_WIN
+    if (mView != nullptr) {
+        QWindow *win = mView->windowHandle();
+        if (win != nullptr) {
+            Platform::setNonClientAreaMode(win, darkMode);
+        }
+    }
+#elif defined(Q_OS_ANDROID)
+    Platform::setNonClientAreaMode(nullptr, darkMode);
+#endif
 }

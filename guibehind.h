@@ -59,6 +59,7 @@ class GuiBehind : public QObject
     Q_PROPERTY(QString buddyAvatar READ buddyAvatar NOTIFY buddyAvatarChanged)
     Q_PROPERTY(bool showNotification READ showNotification WRITE setShowNotification NOTIFY showNotificationChanged)
     Q_PROPERTY(bool closeToTray READ closeToTray WRITE setCloseToTray NOTIFY closeToTrayChanged)
+    Q_PROPERTY(bool autoMode READ autoMode WRITE setAutoMode NOTIFY autoModeChanged)
     Q_PROPERTY(bool darkMode READ darkMode WRITE setDarkMode NOTIFY darkModeChanged)
     Q_PROPERTY(QString initError READ initError NOTIFY initErrorChanged)
     Q_PROPERTY(QString initErrorAction READ initErrorAction NOTIFY initErrorActionChanged)
@@ -113,7 +114,9 @@ public:
     bool showNotification();
     void setCloseToTray(bool enabled);
     bool closeToTray();
-    void setDarkMode(bool enabled);
+    void setAutoMode(bool enabled);
+    bool autoMode();
+    void setDarkMode(bool darkMode);
     bool darkMode();
     void setInitError(const QString &error, const QString &action = "Retry");
     QString initError();
@@ -145,6 +148,7 @@ Q_SIGNALS:
     void buddyAvatarChanged();
     void showNotificationChanged();
     void closeToTrayChanged();
+    void autoModeChanged();
     void darkModeChanged();
     void initErrorChanged();
     void initErrorActionChanged();
@@ -177,7 +181,7 @@ public Q_SLOTS:
 
     // Called by DuktoWindow
     void updateScreenPadding();
-    void updateColorScheme(bool darkMode);
+    void updateColorScheme(bool systemDarkMode);
 
     // Called by QML
     void openDestinationFolder();
@@ -252,6 +256,7 @@ private:
     bool prepareStartTransfer(QString *ip, qint16 *port);
     void startTransfer(const QStringList &files);
     void startTransfer(const QString &text);
+    void setThemeMode(bool darkMode);
 };
 
 #endif // GUIBEHIND_H

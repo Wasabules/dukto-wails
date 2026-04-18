@@ -36,6 +36,8 @@ public:
     QByteArray windowGeometry();
     void saveThemeColor(const QString &color);
     QString themeColor();
+    void saveAutoMode(bool enabled);
+    bool autoMode();
     void saveDarkMode(bool enabled);
     bool darkMode();
     void saveShowTermsOnStart(bool show);
