@@ -91,7 +91,7 @@ void Settings::saveAutoMode(bool enabled) {
 }
 
 bool Settings::autoMode() {
-    return mSettings.value("AutoMode", false).toBool();
+    return mSettings.value("AutoMode", true).toBool();
 }
 
 void Settings::saveDarkMode(bool enabled) {
