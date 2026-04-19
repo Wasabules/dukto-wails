@@ -19,7 +19,7 @@
 import QtQuick 2.3
 
 Flickable {
-    property var lastItem: (guiBehind.isDesktopApp() ? cswitch : colorBoxes)
+    property var lastItem: (guiBehind.isDesktopApp() ? cswitch : modeSwitch)
 
     id: settingsPage
     interactive: (lastItem.y + lastItem.height + 20) > height
@@ -125,7 +125,7 @@ Flickable {
             id: labelColor
             anchors.left: labelPath.left
             anchors.top: buttonPath.bottom
-            anchors.topMargin: 30
+            anchors.topMargin: 10
             font.pixelSize: 16
             text: "Theme color:"
             color: theme.textColor
@@ -250,7 +250,7 @@ Flickable {
             anchors.top: tmswitch.top
             anchors.left: tmswitch.right
             anchors.leftMargin: 30
-            anchors.topMargin: -24
+            anchors.topMargin: -20
         }
 
 
@@ -260,7 +260,7 @@ Flickable {
             anchors.top: tmswitch.bottom
             anchors.left: labelPath.left
             anchors.topMargin: 15
-            text: "Enable Notification"
+            text: "Enable notification"
             checked: guiBehind.showNotification
             onClicked: guiBehind.showNotification = checked
         }
