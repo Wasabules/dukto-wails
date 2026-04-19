@@ -41,7 +41,10 @@ Rectangle {
         radius: height / 2
         border.color: parent.border.color
         border.width: parent.border.width
-        x: guiBehind.darkMode ? switchBox.width - indicator.width + 1 : -1
+        x: guiBehind.darkMode ? handler.xAxis.maximum : handler.xAxis.minimum
+
+        Behavior on x { SmoothedAnimation { duration: 200 } }
+        Behavior on color { ColorAnimation { duration: 100 } }
     }
 
     MouseArea {
@@ -52,6 +55,26 @@ Rectangle {
         Connections {
             function onClicked() {
                 guiBehind.darkMode = !guiBehind.darkMode;
+            }
+        }
+    }
+
+    DragHandler {
+        id: handler
+        target: indicator
+        yAxis.enabled: false
+        xAxis.enabled: true
+        xAxis.maximum: switchBox.width - indicator.width + 1
+        xAxis.minimum: -1
+        onActiveChanged: {
+            if (!active) {
+                if (indicator.x >= (xAxis.maximum - xAxis.minimum) / 2) {
+                    guiBehind.darkMode = true
+                    indicator.x = xAxis.maximum
+                } else {
+                    guiBehind.darkMode = false
+                    indicator.x = xAxis.minimum
+                }
             }
         }
     }

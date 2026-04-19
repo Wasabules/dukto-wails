@@ -41,7 +41,10 @@ Rectangle {
         radius: width / 2
         border.color: parent.border.color
         border.width: parent.border.width
-        y: guiBehind.darkMode ? switchBox.height - indicator.height + 1 : -1
+        y: guiBehind.darkMode ? indicatorArea.drag.maximumY : indicatorArea.drag.minimumY
+
+        Behavior on y { SmoothedAnimation { duration: 200 } }
+        Behavior on color { ColorAnimation { duration: 100 } }
     }
 
     MouseArea {
@@ -49,6 +52,25 @@ Rectangle {
         hoverEnabled: true
         cursorShape: containsMouse ? Qt.PointingHandCursor : Qt.ArrowCursor
         anchors.fill: parent
-        onClicked: guiBehind.darkMode = !guiBehind.darkMode;
+        drag.target: indicator
+        drag.axis: Drag.YAxis
+        drag.minimumY: -1
+        drag.maximumY: switchBox.height - indicator.height + 1
+        drag.onActiveChanged: {
+            if (!drag.active) {
+                if (indicator.y >= (drag.maximumY - drag.minimumY) / 2) {
+                    indicator.y = drag.maximumY
+                    guiBehind.darkMode = true
+                } else {
+                    indicator.y = drag.minimumY
+                    guiBehind.darkMode = false
+                }
+            }
+        }
+        onClicked: {
+            guiBehind.darkMode = !guiBehind.darkMode;
+            // walkaround a Qt bug: after dragging, the clicking won't change indicator.y
+            indicator.y = guiBehind.darkMode ? drag.maximumY : drag.minimumY
+        }
     }
 }
