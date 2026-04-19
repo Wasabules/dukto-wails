@@ -19,9 +19,9 @@
 import QtQuick 2.14
 
 Rectangle {
-    id: checkbox
-    implicitWidth: indicator.implicitWidth + label.anchors.leftMargin + label.implicitWidth
-    implicitHeight: Math.max(indicator.implicitHeight, label.implicitHeight + label.anchors.topMargin)
+    id: container
+    implicitWidth: checkbox.implicitWidth + label.anchors.leftMargin + label.implicitWidth
+    implicitHeight: Math.max(checkbox.implicitHeight, label.implicitHeight + label.anchors.topMargin)
     color: "transparent"
 
     property bool checked: false
@@ -30,28 +30,60 @@ Rectangle {
     signal clicked(bool checked)
 
     Rectangle {
-        id: indicator
-        implicitWidth: 16
-        implicitHeight: 16
-        color: theme.bgColor
-        border.color: theme.themeColor
+        id: checkbox
+        implicitWidth: 40
+        implicitHeight: 24
+        radius: height / 2
+        color: theme.lighterBgColor
+        border.color: checkboxArea.containsMouse ? theme.dimmedTextColor : theme.borderColor
         border.width: 2
 
         Rectangle {
-            visible: checkbox.checked
-            color: theme.themeLighterColor
-            anchors.margins: 4
-            anchors.fill: parent
+            id: indicator
+            anchors.top: parent.top
+            color: checked ? theme.themeColor : theme.bgColor
+            height: parent.height
+            width: height
+            radius: height / 2
+            x: checked ? handler.xAxis.maximum : handler.xAxis.minimum
+            border.color: parent.border.color
+            border.width: 2
+
+            Behavior on x { SmoothedAnimation { duration: 200 } }
+            Behavior on color { ColorAnimation { duration: 100 } }
         }
 
         MouseArea {
+            id: checkboxArea
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: containsMouse ? Qt.PointingHandCursor : Qt.ArrowCursor
             Connections {
                 function onClicked() {
-                    checkbox.checked = !checkbox.checked;
-                    checkbox.clicked(checkbox.checked)
+                    checked = !checked;
+                    clicked(checked)
+                }
+            }
+        }
+
+        DragHandler {
+            id: handler
+            target: indicator
+            yAxis.enabled: false
+            xAxis.enabled: true
+            xAxis.maximum: checkbox.width - indicator.width
+            xAxis.minimum: 0
+            onActiveChanged: {
+                if (!active) {
+                    if (indicator.x >= (xAxis.maximum - xAxis.minimum) / 2) {
+                        indicator.x = xAxis.maximum
+                        checked = true
+                        clicked(true)
+                    } else {
+                        indicator.x = xAxis.minimum
+                        checked = false
+                        clicked(false)
+                    }
                 }
             }
         }
@@ -62,9 +94,9 @@ Rectangle {
         font.pixelSize: 16
         color: theme.textColor
         anchors.top: checkbox.top
-        anchors.left: indicator.right
+        anchors.left: checkbox.right
         anchors.leftMargin: 4
-        anchors.topMargin: -1
+        anchors.topMargin: 2
 
         MouseArea {
             anchors.fill: parent
@@ -72,8 +104,8 @@ Rectangle {
             cursorShape: containsMouse ? Qt.PointingHandCursor : Qt.ArrowCursor
             Connections {
                 function onClicked() {
-                    checkbox.checked = !checkbox.checked;
-                    checkbox.clicked(checkbox.checked)
+                    checked = !checked;
+                    clicked(checked)
                 }
             }
         }

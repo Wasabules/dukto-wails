@@ -19,9 +19,9 @@
 import QtQuick 2.3
 
 Rectangle {
-    id: checkbox
-    implicitWidth: indicator.implicitWidth + label.anchors.leftMargin + label.implicitWidth
-    implicitHeight: Math.max(indicator.implicitHeight, label.implicitHeight + label.anchors.topMargin)
+    id: container
+    implicitWidth: checkbox.implicitWidth + label.anchors.leftMargin + label.implicitWidth
+    implicitHeight: Math.max(checkbox.implicitHeight, label.implicitHeight + label.anchors.topMargin)
     color: "transparent"
 
     property bool checked: false
@@ -30,27 +30,56 @@ Rectangle {
     signal clicked(bool checked)
 
     Rectangle {
-        id: indicator
-        implicitWidth: 16
-        implicitHeight: 16
-        color: theme.bgColor
-        border.color: theme.themeColor
+        id: checkbox
+        implicitWidth: 40
+        implicitHeight: 24
+        radius: height / 2
+        color: theme.lighterBgColor
+        border.color: checkboxArea.containsMouse ? theme.dimmedTextColor : theme.borderColor
         border.width: 2
 
         Rectangle {
-            visible: checkbox.checked
-            color: theme.themeLighterColor
-            anchors.margins: 4
-            anchors.fill: parent
+            id: indicator
+            anchors.top: parent.top
+            color: checked ? theme.themeColor : theme.bgColor
+            height: parent.height
+            width: height
+            radius: height / 2
+            x: checked ? checkboxArea.drag.maximumX : checkboxArea.drag.minimumX
+            border.color: parent.border.color
+            border.width: 2
+
+            Behavior on x { SmoothedAnimation { duration: 200 } }
+            Behavior on color { ColorAnimation { duration: 100 } }
         }
 
         MouseArea {
+            id: checkboxArea
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: containsMouse ? Qt.PointingHandCursor : Qt.ArrowCursor
+            drag.target: indicator
+            drag.axis: Drag.XAxis
+            drag.minimumX: 0
+            drag.maximumX: checkbox.width - indicator.width
+            drag.onActiveChanged: {
+                if (!drag.active) {
+                    if (indicator.x >= (drag.maximumX - drag.minimumX) / 2) {
+                        indicator.x = drag.maximumX
+                        checked = true
+                        container.clicked(true)
+                    } else {
+                        indicator.x = drag.minimumX
+                        checked = false
+                        container.clicked(false)
+                    }
+                }
+            }
             onClicked: {
-                checkbox.checked = !checkbox.checked;
-                checkbox.clicked(checkbox.checked)
+                checked = !checked;
+                // walkaround a Qt bug: after dragging, the clicking won't change indicator.x
+                indicator.x = checked ? checkboxArea.drag.maximumX : checkboxArea.drag.minimumX
+                container.clicked(checked)
             }
         }
     }
@@ -60,17 +89,19 @@ Rectangle {
         font.pixelSize: 16
         color: theme.textColor
         anchors.top: checkbox.top
-        anchors.left: indicator.right
+        anchors.left: checkbox.right
         anchors.leftMargin: 4
-        anchors.topMargin: -1
+        anchors.topMargin: 2
 
         MouseArea {
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: containsMouse ? Qt.PointingHandCursor : Qt.ArrowCursor
             onClicked: {
-                checkbox.checked = !checkbox.checked;
-                checkbox.clicked(checkbox.checked)
+                checked = !checked;
+                // walkaround a Qt bug: after dragging, the clicking won't change indicator.x
+                indicator.x = checked ? checkboxArea.drag.maximumX : checkboxArea.drag.minimumX
+                container.clicked(checked)
             }
         }
     }
