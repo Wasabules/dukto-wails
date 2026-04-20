@@ -39,9 +39,6 @@ int main(int argc, char *argv[])
 #ifdef Q_OS_WIN
     qputenv("QML_ENABLE_TEXT_IMAGE_CACHE", "true");
 #endif
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
-    qputenv("QSG_RHI_BACKEND", "opengl");
-#endif
 
 #if QT_VERSION >= QT_VERSION_CHECK(5, 6, 0) && QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
