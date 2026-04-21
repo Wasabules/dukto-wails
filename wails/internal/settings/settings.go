@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 // fileName is the settings JSON file, relative to the app config dir.
@@ -42,6 +43,110 @@ type Values struct {
 	// private), so it's kept verbatim for forensic value only. The Window
 	// field above is the structured replacement we actually use.
 	WindowGeometry []byte `json:"windowGeometry,omitempty"`
+
+	// History is the receive log shown in the UI's threaded Received panel.
+	// Capped by the caller (see app.appendHistory); we persist whatever the
+	// caller passes without trimming here, so tests can round-trip arbitrary
+	// shapes. A missing history field deserialises to the empty slice.
+	History []HistoryItem `json:"history,omitempty"`
+
+	// Whitelist-related fields. When WhitelistEnabled is true, the transfer
+	// server drops connections whose signature (looked up via the messenger's
+	// IP→peer map) is not in Whitelist. Entries are full signatures
+	// ("User at Host (Platform)") — chosen over IPs so DHCP churn doesn't
+	// invalidate the list. The tradeoff is that a malicious LAN peer could
+	// spoof a trusted signature, but Dukto is already documented as
+	// trusted-LAN-only so this is acceptable.
+	WhitelistEnabled bool     `json:"whitelistEnabled"`
+	Whitelist        []string `json:"whitelist,omitempty"`
+
+	// RejectedExtensions is a list of lowercase extensions (without the leading
+	// dot) that the receiver refuses on sight. Defaults seed common
+	// executable/script extensions; users can override in the settings drawer.
+	RejectedExtensions []string `json:"rejectedExtensions,omitempty"`
+
+	// LargeFileThresholdMB, if > 0, causes the receiver to refuse any session
+	// whose total size exceeds the threshold from a non-whitelisted peer. Set
+	// to 0 to disable the cap entirely.
+	LargeFileThresholdMB int `json:"largeFileThresholdMB"`
+
+	// Aliases maps a peer signature to a friendly name used only locally in
+	// the UI. The wire signature is not rewritten — this is presentation-only.
+	Aliases map[string]string `json:"aliases,omitempty"`
+
+	// ManualPeers is a list of "ip" or "ip:port" strings that the messenger
+	// unicasts HELLO to on every tick, complementing the broadcast discovery
+	// path. Useful across subnets where UDP broadcast doesn't carry.
+	ManualPeers []string `json:"manualPeers,omitempty"`
+
+	// ReceivingEnabled is the user-facing "accept incoming transfers" master
+	// switch. When false, the TCP accept callback refuses every connection
+	// regardless of whitelist. Gated server-side so a compromised/buggy
+	// frontend cannot bypass it.
+	ReceivingEnabled bool `json:"receivingEnabled"`
+
+	// IdleAutoDisableMinutes, if > 0, turns ReceivingEnabled off after the
+	// given number of minutes without a received session. 0 disables the
+	// timer (the "always on" behaviour most users will want).
+	IdleAutoDisableMinutes int `json:"idleAutoDisableMinutes"`
+
+	// BlockedPeers is the inverse of Whitelist. Signatures listed here are
+	// always denied at accept time, regardless of WhitelistEnabled. Useful
+	// for permanently muting a specific spammer without having to lock the
+	// app down to an allow-list.
+	BlockedPeers []string `json:"blockedPeers,omitempty"`
+
+	// TCPAcceptCooldownSeconds is the minimum delay between two accepted
+	// sessions from the same remote IP. 0 disables the rate-limit. When
+	// active, the second burst hit inside the window is rejected and
+	// audit-logged.
+	TCPAcceptCooldownSeconds int `json:"tcpAcceptCooldownSeconds"`
+
+	// UDPHelloCooldownSeconds rate-limits incoming HELLO packets per source
+	// IP in discovery. 0 disables. Small values (1–2 s) are usually enough
+	// to block a broadcast-storm attacker without dropping legitimate peers.
+	UDPHelloCooldownSeconds int `json:"udpHelloCooldownSeconds"`
+
+	// ConfirmUnknownPeers, when true, makes the receiver block every
+	// session from a peer we've never previously accepted until the user
+	// approves it through a UI modal. Timeout (60 s) auto-rejects.
+	ConfirmUnknownPeers bool `json:"confirmUnknownPeers"`
+
+	// ApprovedPeerSigs is the persisted "seen and approved" set used by
+	// ConfirmUnknownPeers. A peer's first accepted session adds its
+	// signature here so subsequent transfers don't re-prompt.
+	ApprovedPeerSigs []string `json:"approvedPeerSigs,omitempty"`
+
+	// MaxFilesPerSession caps the element count inside one session.
+	// 0 disables. Protects against "10 million tiny files" attacks that
+	// would otherwise exhaust inodes or the file descriptor table.
+	MaxFilesPerSession int `json:"maxFilesPerSession"`
+
+	// MaxPathDepth caps the number of '/' segments in any incoming element
+	// name. 0 disables. A low value (10–20) mitigates path-blowup tricks.
+	MaxPathDepth int `json:"maxPathDepth"`
+
+	// MinFreeDiskPercent, if > 0, causes the receiver to refuse a session
+	// when the destination filesystem would drop below this free-space
+	// percentage after the transfer. 0 disables.
+	MinFreeDiskPercent int `json:"minFreeDiskPercent"`
+
+	// AllowedInterfaces filters which local network interfaces the server
+	// will accept connections on. Empty = accept everywhere. Matches
+	// against the interface's display name (e.g. "eth0", "Wi-Fi").
+	AllowedInterfaces []string `json:"allowedInterfaces,omitempty"`
+}
+
+// HistoryItem is one received file or text snippet, persisted so the threaded
+// Received panel survives restarts. Kept deliberately small — no thumbnails,
+// no payload bytes for files — so the settings JSON stays cheap to read.
+type HistoryItem struct {
+	Kind string    `json:"kind"`           // "file" or "text"
+	Name string    `json:"name,omitempty"` // filename for kind=file, empty for text
+	Path string    `json:"path,omitempty"` // local absolute path for kind=file
+	Text string    `json:"text,omitempty"` // snippet body for kind=text
+	At   time.Time `json:"at"`
+	From string    `json:"from,omitempty"` // "ip:port" of the sender
 }
 
 // WindowState is the persisted window placement. All four fields are required;
@@ -58,11 +163,18 @@ type WindowState struct {
 // (typically ~/Downloads) and keep the logic out of this package.
 func defaults() Values {
 	return Values{
-		AutoTheme:        true,
-		DarkMode:         false,
-		ShowTermsOnStart: true,
-		Notifications:    false,
-		CloseToTray:      false,
+		AutoTheme:            true,
+		DarkMode:             false,
+		ShowTermsOnStart:     true,
+		Notifications:        false,
+		CloseToTray:          false,
+		WhitelistEnabled:       false,
+		LargeFileThresholdMB:   0,
+		ReceivingEnabled:       true,
+		IdleAutoDisableMinutes: 0,
+		RejectedExtensions: []string{
+			"exe", "bat", "cmd", "com", "scr", "msi", "ps1", "vbs", "jse", "lnk",
+		},
 	}
 }
 

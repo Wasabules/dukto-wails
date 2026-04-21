@@ -62,6 +62,12 @@ type Messenger struct {
 	ports    map[uint16]struct{}
 	localIPs map[netip.Addr]int
 	badIPs   map[netip.Addr]struct{}
+	// lastHello tracks the last time we accepted a datagram from a given
+	// source IP, to enforce HelloCooldown. Kept on the messenger itself
+	// rather than a separate state struct because it's cheap (a handful of
+	// peers on a LAN) and needs the same lock as peers/badIPs.
+	lastHello map[netip.Addr]time.Time
+	cooldown  time.Duration
 
 	events chan Event
 	stop   chan struct{}
@@ -81,6 +87,12 @@ type Config struct {
 	// Interfaces, if non-nil, overrides the default system interface
 	// enumerator. Exposed for testing; production code leaves it nil.
 	Interfaces InterfaceEnumerator
+
+	// HelloCooldown, if > 0, drops HELLO datagrams received within this
+	// window from the same source IP. Zero disables the gate. Used to
+	// blunt broadcast-storm attackers without impacting legitimate peers
+	// (who send ~one HELLO per 10s).
+	HelloCooldown time.Duration
 }
 
 // New builds a Messenger. It does not open any socket; call Start.
@@ -98,17 +110,27 @@ func New(cfg Config) *Messenger {
 		ifaces = SystemInterfaces
 	}
 	return &Messenger{
-		port:     port,
-		sigFn:    sig,
-		ifaces:   ifaces,
-		now:      time.Now,
-		peers:    map[netip.Addr]Peer{},
-		ports:    map[uint16]struct{}{protocol.DefaultPort: {}},
-		localIPs: map[netip.Addr]int{},
-		badIPs:   map[netip.Addr]struct{}{},
-		events:   make(chan Event, 16),
-		stop:     make(chan struct{}),
+		port:      port,
+		sigFn:     sig,
+		ifaces:    ifaces,
+		now:       time.Now,
+		peers:     map[netip.Addr]Peer{},
+		ports:     map[uint16]struct{}{protocol.DefaultPort: {}},
+		localIPs:  map[netip.Addr]int{},
+		badIPs:    map[netip.Addr]struct{}{},
+		lastHello: map[netip.Addr]time.Time{},
+		cooldown:  cfg.HelloCooldown,
+		events:    make(chan Event, 16),
+		stop:      make(chan struct{}),
 	}
+}
+
+// SetHelloCooldown updates the per-IP rate-limit at runtime. Zero disables
+// the gate. Safe to call while the messenger is running.
+func (m *Messenger) SetHelloCooldown(d time.Duration) {
+	m.mu.Lock()
+	m.cooldown = d
+	m.mu.Unlock()
 }
 
 // Start opens the UDP socket and begins the receive loop. It returns once the
@@ -280,6 +302,17 @@ func (m *Messenger) handleDatagram(data []byte, src netip.Addr) {
 		m.mu.Unlock()
 		return
 	}
+	// Per-source cooldown: drop datagrams arriving inside the configured
+	// window. Evaluated after the self-echo check so our own broadcasts
+	// don't use up a peer's slot.
+	if m.cooldown > 0 {
+		now := m.now()
+		if last, ok := m.lastHello[src]; ok && now.Sub(last) < m.cooldown {
+			m.mu.Unlock()
+			return
+		}
+		m.lastHello[src] = now
+	}
 	m.mu.Unlock()
 
 	msg, err := protocol.ParseBuddyMessage(data)
@@ -325,6 +358,18 @@ func (m *Messenger) dispatch(msg protocol.BuddyMessage, src netip.Addr) {
 		}
 		m.emit(Event{Kind: EventFound, Peer: peer})
 	}
+}
+
+// UnicastHello sends a HELLO to a specific addr:port. Unlike SayHello (which
+// broadcasts), this is used to manually poke a peer that isn't reachable via
+// UDP broadcast — typically one on a different subnet added via settings.
+// Errors are swallowed the same way sendUnicastHello does; the UI should
+// retry on the next tick.
+func (m *Messenger) UnicastHello(addr netip.Addr, port uint16) {
+	if port == 0 {
+		port = protocol.DefaultPort
+	}
+	m.sendUnicastHello(addr, port)
 }
 
 // sendUnicastHello sends a HELLO reply to (addr, port). Picks HELLO_UNICAST

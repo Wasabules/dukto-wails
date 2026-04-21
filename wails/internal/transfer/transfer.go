@@ -170,3 +170,73 @@ func (sr *Reader) Next() (Element, error) {
 
 // Remaining reports the number of elements not yet returned by Next.
 func (sr *Reader) Remaining() uint64 { return sr.remaining }
+
+// ProgressFunc is called with cumulative byte progress for a session. Done is
+// the number of content bytes processed so far (excludes session/element
+// headers), total is hdr.TotalSize. total may be 0 if the session declared no
+// size; callers should treat that as "indeterminate".
+type ProgressFunc func(done, total int64)
+
+// countingReader wraps an io.Reader and updates a shared byte counter every
+// Read. It calls cb at most once per stride bytes (plus once more when the
+// underlying reader reaches EOF / returns an error), so large files don't
+// produce one event per 32KB io.Copy chunk.
+type countingReader struct {
+	r        io.Reader
+	counter  *int64
+	total    int64
+	cb       ProgressFunc
+	stride   int64
+	lastEmit int64
+}
+
+func (cr *countingReader) Read(p []byte) (int, error) {
+	n, err := cr.r.Read(p)
+	if n > 0 {
+		*cr.counter += int64(n)
+	}
+	if cr.cb != nil && (*cr.counter-cr.lastEmit >= cr.stride || err != nil) {
+		cr.cb(*cr.counter, cr.total)
+		cr.lastEmit = *cr.counter
+	}
+	return n, err
+}
+
+// countingWriter mirrors countingReader for the send path.
+type countingWriter struct {
+	w        io.Writer
+	counter  *int64
+	total    int64
+	cb       ProgressFunc
+	stride   int64
+	lastEmit int64
+}
+
+func (cw *countingWriter) Write(p []byte) (int, error) {
+	n, err := cw.w.Write(p)
+	if n > 0 {
+		*cw.counter += int64(n)
+	}
+	if cw.cb != nil && (*cw.counter-cw.lastEmit >= cw.stride || err != nil) {
+		cw.cb(*cw.counter, cw.total)
+		cw.lastEmit = *cw.counter
+	}
+	return n, err
+}
+
+// progressStride picks an update frequency that scales with the session size:
+// ~1% of total, bounded to [64KiB, 1MiB]. A GB transfer gets ~100 events, a
+// 1MB transfer gets ~16, and small files get a final "100%" event via the
+// err != nil branch of countingReader.Read.
+func progressStride(total int64) int64 {
+	const min, max = int64(64 * 1024), int64(1024 * 1024)
+	s := total / 100
+	switch {
+	case s < min:
+		return min
+	case s > max:
+		return max
+	default:
+		return s
+	}
+}

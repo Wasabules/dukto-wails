@@ -27,6 +27,22 @@ type Server struct {
 	// connection mid-handshake, reset sockets on sleep/wake, etc).
 	OnAcceptError func(error)
 
+	// OnSessionStart, if non-nil, is invoked right before Receiver.Handle
+	// starts. The callback receives a cancel fn that, when called, aborts
+	// the in-flight session (closes the connection and returns ctx.Err()
+	// from Handle). Used by the UI to offer a "cancel transfer" button.
+	OnSessionStart func(cancel context.CancelFunc)
+	// OnSessionEnd, if non-nil, is invoked after Handle returns, regardless
+	// of error. Used to clear the UI cancel state.
+	OnSessionEnd func()
+
+	// Allow, if non-nil, is consulted before Handle runs. Returning false
+	// causes the connection to be closed immediately without any Receiver
+	// work. It receives the full net.Conn so checks can examine both the
+	// remote and the local address (used for per-interface gating, block
+	// list, rate-limiting, audit logging).
+	Allow func(conn net.Conn) bool
+
 	inFlight atomic.Bool
 
 	mu sync.Mutex
@@ -81,6 +97,12 @@ func (s *Server) Close() error {
 
 func (s *Server) handle(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
+	// Policy gate. Closes the socket immediately if the peer isn't
+	// allowed — from the sender's perspective this looks like any other
+	// refused transfer.
+	if s.Allow != nil && !s.Allow(conn) {
+		return
+	}
 	// Single-transfer-at-a-time guard — matches Qt behavior.
 	if !s.inFlight.CompareAndSwap(false, true) {
 		return
@@ -94,7 +116,18 @@ func (s *Server) handle(ctx context.Context, conn net.Conn) {
 		}
 		return
 	}
-	if err := rc.Handle(ctx, conn); err != nil && s.OnAcceptError != nil {
+	// Scope a cancellable context to this session so the UI can abort mid
+	// transfer without closing the listener. Handle already closes the
+	// connection when its ctx is cancelled.
+	sessCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if s.OnSessionStart != nil {
+		s.OnSessionStart(cancel)
+	}
+	if s.OnSessionEnd != nil {
+		defer s.OnSessionEnd()
+	}
+	if err := rc.Handle(sessCtx, conn); err != nil && s.OnAcceptError != nil {
 		s.OnAcceptError(err)
 	}
 }

@@ -13,35 +13,78 @@ import (
 	"dukto/internal/protocol"
 )
 
+// Sender carries per-send optional behavior. The zero value is valid and
+// matches the previous package-level Dial/Send semantics.
+type Sender struct {
+	// OnProgress, if set, reports cumulative bytes sent for this session.
+	// Header bytes are not counted; only element payloads are. The callback
+	// is throttled — see progressStride.
+	OnProgress ProgressFunc
+
+	// bytesSent is the running counter shared across counting writers during
+	// a single Send() call. Reset per session in Send.
+	bytesSent int64
+}
+
 // Send opens sources in order and streams a full session to w. It does not
 // dial or close a socket; the caller supplies w — typically a *net.TCPConn.
-// sendBufSize controls the io.Copy staging buffer (0 uses the default).
 //
 // The header must describe sources exactly — if it declares more or fewer
 // elements than len(sources), Send returns an error after the mismatch is
 // detected (either from Writer.Done or mid-stream).
-func Send(w io.Writer, sources []Source, hdr protocol.SessionHeader) error {
-	sw, err := NewWriter(w, hdr)
+func (s *Sender) Send(w io.Writer, sources []Source, hdr protocol.SessionHeader) error {
+	s.bytesSent = 0
+	stride := progressStride(hdr.TotalSize)
+	pw := s.wrapProgress(w, hdr.TotalSize, stride)
+	sw, err := NewWriter(pw, hdr)
 	if err != nil {
 		return fmt.Errorf("transfer: write session header: %w", err)
 	}
-	for _, s := range sources {
+	for _, src := range sources {
 		switch {
-		case s.IsText():
-			if err := sw.WriteText(s.Text); err != nil {
+		case src.IsText():
+			if err := sw.WriteText(src.Text); err != nil {
 				return fmt.Errorf("transfer: write text element: %w", err)
 			}
-		case s.IsDirectory():
-			if err := sw.WriteDir(s.Name); err != nil {
-				return fmt.Errorf("transfer: write dir %q: %w", s.Name, err)
+		case src.IsDirectory():
+			if err := sw.WriteDir(src.Name); err != nil {
+				return fmt.Errorf("transfer: write dir %q: %w", src.Name, err)
 			}
 		default:
-			if err := sendFile(sw, s); err != nil {
+			if err := sendFile(sw, src); err != nil {
 				return err
 			}
 		}
 	}
-	return sw.Done()
+	if err := sw.Done(); err != nil {
+		return err
+	}
+	// Terminal tick so the UI bar reaches 100% even if the last file's stride
+	// didn't align with the session end.
+	if s.OnProgress != nil && hdr.TotalSize > 0 {
+		s.OnProgress(s.bytesSent, hdr.TotalSize)
+	}
+	return nil
+}
+
+// wrapProgress returns w, possibly wrapped in a counter. See receive.wrapProgress.
+func (s *Sender) wrapProgress(w io.Writer, total, stride int64) io.Writer {
+	if s.OnProgress == nil {
+		return w
+	}
+	return &countingWriter{
+		w:       w,
+		counter: &s.bytesSent,
+		total:   total,
+		cb:      s.OnProgress,
+		stride:  stride,
+	}
+}
+
+// Send is the progress-less convenience wrapper for the Sender.Send method.
+// Existing callers (and tests) stay on this signature.
+func Send(w io.Writer, sources []Source, hdr protocol.SessionHeader) error {
+	return (&Sender{}).Send(w, sources, hdr)
 }
 
 func sendFile(sw *Writer, s Source) error {
@@ -61,7 +104,7 @@ func sendFile(sw *Writer, s Source) error {
 
 // Dial connects to peer and streams the session to the TCP socket, then
 // half-closes writes. Cancelling ctx closes the connection.
-func Dial(ctx context.Context, peer netip.AddrPort, sources []Source, hdr protocol.SessionHeader) error {
+func (s *Sender) Dial(ctx context.Context, peer netip.AddrPort, sources []Source, hdr protocol.SessionHeader) error {
 	dialer := net.Dialer{}
 	conn, err := dialer.DialContext(ctx, "tcp4", peer.String())
 	if err != nil {
@@ -80,7 +123,7 @@ func Dial(ctx context.Context, peer netip.AddrPort, sources []Source, hdr protoc
 	}()
 
 	bw := bufio.NewWriter(conn)
-	if err := Send(bw, sources, hdr); err != nil {
+	if err := s.Send(bw, sources, hdr); err != nil {
 		return err
 	}
 	if err := bw.Flush(); err != nil {
@@ -93,6 +136,11 @@ func Dial(ctx context.Context, peer netip.AddrPort, sources []Source, hdr protoc
 		_ = tcp.CloseWrite()
 	}
 	return nil
+}
+
+// Dial is the progress-less convenience wrapper for Sender.Dial.
+func Dial(ctx context.Context, peer netip.AddrPort, sources []Source, hdr protocol.SessionHeader) error {
+	return (&Sender{}).Dial(ctx, peer, sources, hdr)
 }
 
 // SendText is a convenience that dials peer and sends a single text snippet.

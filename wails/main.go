@@ -2,6 +2,7 @@ package main
 
 import (
 	"embed"
+	"net/http"
 	"runtime"
 
 	"github.com/wailsapp/wails/v2"
@@ -25,6 +26,11 @@ func main() {
 		Height: 768,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
+			// Fall-through HTTP handler: Wails only routes requests here when
+			// the embedded SPA bundle has no matching asset. We use it to
+			// serve files under the destination directory so the frontend
+			// can render <img>/<video>/<audio> previews of received content.
+			Handler: http.HandlerFunc(app.serveFile),
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
 		OnStartup:        app.startup,

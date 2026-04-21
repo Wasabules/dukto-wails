@@ -31,6 +31,13 @@ const (
 	// EventSessionComplete fires once after the last element has been
 	// processed without error.
 	EventSessionComplete
+	// EventElementRejected fires when a single element is refused by a
+	// defense-in-depth check (bad wire name, bad extension, depth cap,
+	// per-session file cap). Name is the offending element name; Text
+	// carries a short human reason. The session as a whole still aborts,
+	// so callers typically surface this as a toast alongside the
+	// subsequent receive:error.
+	EventElementRejected
 )
 
 // ReceiveEvent is delivered to the Receiver's Handler callback. It carries
@@ -43,6 +50,10 @@ type ReceiveEvent struct {
 	Size      int64
 	LocalPath string
 	Text      string
+	// RemoteAddr is the "ip:port" of the peer that opened this session. Set
+	// by Handle when the io.Reader is a net.Conn; empty otherwise. The UI
+	// uses it to thread received items by sender.
+	RemoteAddr string
 }
 
 // Handler is the Receiver's event sink. It is invoked synchronously from the
@@ -59,10 +70,63 @@ type Handler func(ReceiveEvent) error
 // under "foo (2)/bar.txt" when "foo" was renamed.
 //
 // OnEvent may be nil, in which case no events are delivered.
+//
+// OnProgress, if set, is called with cumulative bytes received during the
+// session. It fires both mid-file (for sub-file granularity on large files)
+// and at element boundaries. The final call of the session reports
+// (TotalSize, TotalSize).
 type Receiver struct {
-	Dest    string
-	OnEvent Handler
+	Dest       string
+	OnEvent    Handler
+	OnProgress ProgressFunc
+
+	// RejectExtensions is a set of lowercase extensions (without dot) that,
+	// if matched against an incoming file's name, cause Handle to abort with
+	// a "rejected" error *before* any bytes hit disk. Empty means accept all.
+	// Applied per-element, so a mixed session with one rejected file tears
+	// down the whole receive — intentional, to match "I don't trust this
+	// sender" semantics.
+	RejectExtensions map[string]struct{}
+
+	// MaxSessionBytes, if > 0, causes Handle to refuse any session whose
+	// SessionHeader.TotalSize exceeds the limit. Evaluated before any element
+	// is read. 0 disables the cap.
+	MaxSessionBytes int64
+
+	// MaxFilesPerSession, if > 0, caps the number of non-text elements in
+	// one session. Trips EventElementRejected + ErrTooManyFiles on the
+	// first element past the cap.
+	MaxFilesPerSession int
+
+	// MaxPathDepth, if > 0, caps '/' segments in any element name. Trips
+	// EventElementRejected + ErrPathTooDeep.
+	MaxPathDepth int
+
+	// AllowSession, if set, is consulted after the session header is parsed
+	// and before the first element is read. Returning a non-nil error aborts
+	// the session cleanly. Used by the host to apply dynamic policy (e.g.
+	// disk-free guard) that needs the total bytes advertised by the sender.
+	AllowSession func(protocol.SessionHeader) error
+
+	// bytesRead is the running byte counter, shared across all counting
+	// readers built during a single Handle() call. Reset per session in Handle.
+	bytesRead int64
+	// remoteAddr is captured from the net.Conn at the start of Handle and
+	// stamped onto every ReceiveEvent. Empty for non-conn readers (tests).
+	remoteAddr string
 }
+
+// ErrSessionTooLarge is returned by Handle when a session's total size would
+// exceed the configured MaxSessionBytes. ErrRejectedExtension fires when a
+// file element's extension is in RejectExtensions. Both are exported so the
+// UI can distinguish policy rejections from real IO failures.
+var (
+	ErrSessionTooLarge    = errors.New("transfer: session exceeds size cap")
+	ErrRejectedExtension  = errors.New("transfer: rejected by extension policy")
+	ErrTooManyFiles       = errors.New("transfer: session exceeds file-count cap")
+	ErrPathTooDeep        = errors.New("transfer: element path too deep")
+	ErrInvalidName        = errors.New("transfer: element name failed validation")
+)
 
 // Handle reads one session from r and writes it to the filesystem.
 //
@@ -80,27 +144,43 @@ func (rc *Receiver) Handle(ctx context.Context, r io.Reader) error {
 		return fmt.Errorf("transfer: dest %q is not a directory", rc.Dest)
 	}
 
-	if conn, ok := r.(net.Conn); ok && ctx != nil {
-		done := make(chan struct{})
-		defer close(done)
-		go func() {
-			select {
-			case <-ctx.Done():
-				_ = conn.Close()
-			case <-done:
-			}
-		}()
+	if conn, ok := r.(net.Conn); ok {
+		if ra := conn.RemoteAddr(); ra != nil {
+			rc.remoteAddr = ra.String()
+		}
+		if ctx != nil {
+			done := make(chan struct{})
+			defer close(done)
+			go func() {
+				select {
+				case <-ctx.Done():
+					_ = conn.Close()
+				case <-done:
+				}
+			}()
+		}
 	}
 
 	sr, err := NewReader(r)
 	if err != nil {
 		return fmt.Errorf("transfer: read session header: %w", err)
 	}
+	if rc.MaxSessionBytes > 0 && sr.Header.TotalSize > rc.MaxSessionBytes {
+		return fmt.Errorf("%w: %d > %d", ErrSessionTooLarge, sr.Header.TotalSize, rc.MaxSessionBytes)
+	}
+	if rc.AllowSession != nil {
+		if err := rc.AllowSession(sr.Header); err != nil {
+			return err
+		}
+	}
+	rc.bytesRead = 0
 	if err := rc.emit(ReceiveEvent{Kind: EventSessionStart, Header: sr.Header}); err != nil {
 		return err
 	}
 
 	topRenames := map[string]string{}
+	stride := progressStride(sr.Header.TotalSize)
+	var fileCount int
 
 	for {
 		el, err := sr.Next()
@@ -110,20 +190,27 @@ func (rc *Receiver) Handle(ctx context.Context, r io.Reader) error {
 		if err != nil {
 			return fmt.Errorf("transfer: read element: %w", err)
 		}
-		if err := rc.processElement(destAbs, el, topRenames); err != nil {
+		if err := rc.processElement(destAbs, el, topRenames, sr.Header.TotalSize, stride, &fileCount); err != nil {
 			return err
 		}
+	}
+
+	// Terminal progress event so the UI bar hits 100% even if the last file's
+	// io.Copy didn't naturally land on a stride boundary.
+	if rc.OnProgress != nil && sr.Header.TotalSize > 0 {
+		rc.OnProgress(rc.bytesRead, sr.Header.TotalSize)
 	}
 
 	return rc.emit(ReceiveEvent{Kind: EventSessionComplete, Header: sr.Header})
 }
 
-func (rc *Receiver) processElement(destAbs string, el Element, topRenames map[string]string) error {
+func (rc *Receiver) processElement(destAbs string, el Element, topRenames map[string]string, total, stride int64, fileCount *int) error {
 	// Text snippets bypass the filesystem entirely.
 	if el.IsText() {
 		var sb strings.Builder
 		if el.Data != nil {
-			if _, err := io.Copy(&sb, el.Data); err != nil {
+			src := rc.wrapProgress(el.Data, total, stride)
+			if _, err := io.Copy(&sb, src); err != nil {
 				return fmt.Errorf("transfer: read text body: %w", err)
 			}
 		}
@@ -136,7 +223,29 @@ func (rc *Receiver) processElement(destAbs string, el Element, topRenames map[st
 	}
 
 	if err := validateWireName(el.Header.Name); err != nil {
-		return fmt.Errorf("transfer: reject element name %q: %w", el.Header.Name, err)
+		rc.emitReject(el.Header.Name, "invalid-name", err.Error())
+		return fmt.Errorf("%w: %q: %v", ErrInvalidName, el.Header.Name, err)
+	}
+	if rc.MaxPathDepth > 0 {
+		depth := strings.Count(el.Header.Name, "/") + 1
+		if depth > rc.MaxPathDepth {
+			rc.emitReject(el.Header.Name, "path-too-deep", fmt.Sprintf("depth %d exceeds cap %d", depth, rc.MaxPathDepth))
+			return fmt.Errorf("%w: %d > %d", ErrPathTooDeep, depth, rc.MaxPathDepth)
+		}
+	}
+	if !el.IsDirectory() && len(rc.RejectExtensions) > 0 {
+		ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(el.Header.Name), "."))
+		if _, blocked := rc.RejectExtensions[ext]; blocked {
+			rc.emitReject(el.Header.Name, "extension", ext)
+			return fmt.Errorf("%w: %s", ErrRejectedExtension, ext)
+		}
+	}
+	if !el.IsDirectory() && rc.MaxFilesPerSession > 0 {
+		*fileCount++
+		if *fileCount > rc.MaxFilesPerSession {
+			rc.emitReject(el.Header.Name, "too-many-files", fmt.Sprintf("%d > %d", *fileCount, rc.MaxFilesPerSession))
+			return fmt.Errorf("%w: %d > %d", ErrTooManyFiles, *fileCount, rc.MaxFilesPerSession)
+		}
 	}
 
 	effectiveName := rewriteTopLevel(el.Header.Name, topRenames)
@@ -193,7 +302,8 @@ func (rc *Receiver) processElement(destAbs string, el Element, topRenames map[st
 		return fmt.Errorf("transfer: create %q: %w", finalPath, err)
 	}
 	if el.Data != nil && el.Header.Size > 0 {
-		if _, err := io.Copy(f, el.Data); err != nil {
+		src := rc.wrapProgress(el.Data, total, stride)
+		if _, err := io.Copy(f, src); err != nil {
 			f.Close()
 			_ = os.Remove(finalPath)
 			return fmt.Errorf("transfer: write %q: %w", finalPath, err)
@@ -210,11 +320,43 @@ func (rc *Receiver) processElement(destAbs string, el Element, topRenames map[st
 	})
 }
 
+// emitReject is a convenience helper so the four defense-in-depth checks
+// above don't each need to build the event boilerplate.
+func (rc *Receiver) emitReject(name, reason, detail string) {
+	if rc.OnEvent == nil {
+		return
+	}
+	_ = rc.emit(ReceiveEvent{
+		Kind: EventElementRejected,
+		Name: name,
+		Text: reason + ": " + detail,
+	})
+}
+
 func (rc *Receiver) emit(ev ReceiveEvent) error {
 	if rc.OnEvent == nil {
 		return nil
 	}
+	if ev.RemoteAddr == "" {
+		ev.RemoteAddr = rc.remoteAddr
+	}
 	return rc.OnEvent(ev)
+}
+
+// wrapProgress returns r, possibly wrapped in a counter, so callers don't
+// branch on OnProgress at every io.Copy site. A nil OnProgress falls through
+// without any allocation.
+func (rc *Receiver) wrapProgress(r io.Reader, total, stride int64) io.Reader {
+	if rc.OnProgress == nil {
+		return r
+	}
+	return &countingReader{
+		r:       r,
+		counter: &rc.bytesRead,
+		total:   total,
+		cb:      rc.OnProgress,
+		stride:  stride,
+	}
 }
 
 // rewriteTopLevel swaps the first path segment with its session-specific
