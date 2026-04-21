@@ -169,12 +169,23 @@ make
 
 GitHub Actions workflows under `.github/workflows/`:
 
-| Workflow             | Trigger                | What it does |
-|----------------------|-----------------------|--------------|
-| `ci.yml`             | Every push / PR       | Fast lane: `go test ./...` and `npm run check` for the Wails port |
-| `build-wails.yml`    | Push / PR / manual    | `wails build` on Ubuntu, Windows and macOS |
-| `build-qt6.yml`      | Push / PR / manual    | Qt6 CMake build on Ubuntu, Windows and macOS |
-| `build-qt5.yml`      | Push / PR / manual    | Qt5 CMake build on Ubuntu (legacy coverage) |
-| `build-android.yml`  | Push / PR / manual    | Qt6-Android APK for arm64-v8a and armeabi-v7a |
+| Workflow             | Trigger                           | What it does |
+|----------------------|-----------------------------------|--------------|
+| `ci.yml`             | Every push / PR                   | Fast lane: `go vet`, `go test ./...` and `npm run check` for the Wails port |
+| `build-wails.yml`    | Push / PR touching `wails/`       | `wails build` on Ubuntu, Windows and macOS |
+| `build-qt6.yml`      | Push / PR touching Qt sources     | Qt 6.8.1 CMake build on Ubuntu, Windows and macOS |
+| `build-qt5.yml`      | Push / PR touching Qt sources     | Qt 5.15.2 CMake build on Ubuntu (legacy coverage) |
+| `build-android.yml`  | Push / PR touching Qt sources     | Qt6-Android APK for `arm64_v8a` and `armv7` |
+| `release.yml`        | Push of tag `v*`, or manual       | Runs tests + every build target, then creates a GitHub release with all packaged artifacts attached |
 
-Workflows currently only verify that each target builds cleanly; they do not publish release artifacts yet.
+### Cutting a release
+
+1. Bump `version.h` (both `#define VERSION_*` and the `VERSION=x.y.z` line) and commit.
+2. Tag the commit `vX.Y.Z` and push the tag:
+   ```sh
+   git tag v6.2.0
+   git push origin v6.2.0
+   ```
+3. `release.yml` runs on the tag push: gates on `go test` + `svelte-check`, then builds Wails (3 OS), Qt6 desktop (3 OS), Qt5 desktop (Linux) and Qt6-Android (arm64-v8a + armv7) in parallel. The final `publish` job downloads every artifact and creates a GitHub release titled `Dukto X.Y.Z` with auto-generated notes.
+4. Android APKs are currently unsigned — sign them out-of-band before distributing if needed.
+5. `workflow_dispatch` is also available from the Actions tab for re-runs; pass the existing tag as input.
