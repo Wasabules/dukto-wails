@@ -1,0 +1,79 @@
+name: build-wails
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "wails/**"
+      - ".github/workflows/build-wails.yml"
+  pull_request:
+    paths:
+      - "wails/**"
+      - ".github/workflows/build-wails.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux-amd64
+            platform: linux/amd64
+          - os: windows-latest
+            label: windows-amd64
+            platform: windows/amd64
+          - os: macos-latest
+            label: darwin-universal
+            platform: darwin/universal
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache-dependency-path: wails/go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: wails/frontend/package-lock.json
+
+      - name: Install Linux WebKit/GTK deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            pkg-config
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+
+      - name: wails doctor
+        working-directory: wails
+        shell: bash
+        run: wails doctor || true
+
+      - name: wails build
+        working-directory: wails
+        shell: bash
+        run: wails build -clean -s -platform ${{ matrix.platform }}
+
+      - name: Upload artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dukto-wails-${{ matrix.label }}
+          path: wails/build/bin/*
+          if-no-files-found: error
+          retention-days: 7

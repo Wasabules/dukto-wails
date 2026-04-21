@@ -1,0 +1,61 @@
+name: build-qt6
+
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - "wails/**"
+      - "docs/**"
+      - "**.md"
+  pull_request:
+    paths-ignore:
+      - "wails/**"
+      - "docs/**"
+      - "**.md"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.1"
+          target: "desktop"
+          arch: ${{ runner.os == 'Windows' && 'win64_msvc2022_64' || '' }}
+          cache: true
+
+      - name: Install Linux build deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            libgl1-mesa-dev \
+            libglib2.0-dev \
+            libdbus-1-dev \
+            libnotify-dev
+
+      - name: Configure MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DUSE_SINGLE_APP=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel

@@ -1,0 +1,52 @@
+name: build-qt5
+
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - "wails/**"
+      - "docs/**"
+      - "**.md"
+  pull_request:
+    paths-ignore:
+      - "wails/**"
+      - "docs/**"
+      - "**.md"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ubuntu-qt5
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Qt 5
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "5.15.2"
+          host: linux
+          target: desktop
+          cache: true
+
+      - name: Install Linux build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            libgl1-mesa-dev \
+            libglib2.0-dev \
+            libdbus-1-dev \
+            libnotify-dev
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DUSE_SINGLE_APP=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
