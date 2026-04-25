@@ -19,6 +19,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base32"
 	"encoding/pem"
 	"errors"
@@ -27,6 +28,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"filippo.io/edwards25519"
+	"golang.org/x/crypto/curve25519"
 )
 
 // Identity wraps an Ed25519 keypair plus its derived fingerprint.
@@ -137,4 +141,64 @@ func decode(data []byte) (Identity, error) {
 		return Identity{}, errors.New("private key did not yield an ed25519 public key")
 	}
 	return Identity{Public: pub, Private: priv}, nil
+}
+
+// X25519Private returns the long-term X25519 scalar derived from this
+// install's Ed25519 seed. This is the same scalar Ed25519 itself uses as
+// the signing scalar `a` (RFC 8032 §5.1.5), which means the corresponding
+// X25519 public key is the Montgomery projection of the Ed25519 public
+// point — see [Ed25519PubToX25519Pub].
+//
+// Both peers can therefore use their existing Ed25519 identity for the
+// Noise XX static keypair without exchanging a separate DH key on the
+// wire: the pubkey advertised in UDP discovery (0x06/0x07) is enough to
+// verify the remote_static received during the Noise handshake.
+func (id Identity) X25519Private() [32]byte {
+	if len(id.Private) != ed25519.PrivateKeySize {
+		return [32]byte{}
+	}
+	seed := id.Private[:32]
+	h := sha512.Sum512(seed)
+	var scalar [32]byte
+	copy(scalar[:], h[:32])
+	// Standard X25519 clamp: clear the bottom 3 bits, clear the top bit, set
+	// the second-highest bit. Matches what RFC 8032 does to derive `a` and
+	// what RFC 7748 mandates for X25519.
+	scalar[0] &= 248
+	scalar[31] &= 127
+	scalar[31] |= 64
+	return scalar
+}
+
+// X25519Public returns the X25519 public key matching [X25519Private]. It
+// is consistent with [Ed25519PubToX25519Pub] applied to id.Public.
+func (id Identity) X25519Public() ([32]byte, error) {
+	priv := id.X25519Private()
+	pub, err := curve25519.X25519(priv[:], curve25519.Basepoint)
+	if err != nil {
+		return [32]byte{}, fmt.Errorf("identity: derive x25519 public: %w", err)
+	}
+	var out [32]byte
+	copy(out[:], pub)
+	return out, nil
+}
+
+// Ed25519PubToX25519Pub computes the X25519 (Montgomery) public key
+// equivalent to an Ed25519 (Edwards) public key. This makes a peer's
+// Ed25519 fingerprint sufficient to verify the remote_static seen during
+// a Noise XX handshake — no separate DH pubkey needs to ride on UDP.
+//
+// Returns an error if the input isn't a valid Edwards25519 point (e.g. a
+// random byte string an attacker tried to inject).
+func Ed25519PubToX25519Pub(pub ed25519.PublicKey) ([32]byte, error) {
+	if len(pub) != ed25519.PublicKeySize {
+		return [32]byte{}, fmt.Errorf("identity: ed25519 pubkey length %d, expected %d", len(pub), ed25519.PublicKeySize)
+	}
+	point, err := new(edwards25519.Point).SetBytes(pub)
+	if err != nil {
+		return [32]byte{}, fmt.Errorf("identity: invalid edwards point: %w", err)
+	}
+	var out [32]byte
+	copy(out[:], point.BytesMontgomery())
+	return out, nil
 }
