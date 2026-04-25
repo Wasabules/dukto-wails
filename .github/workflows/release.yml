@@ -260,6 +260,10 @@ jobs:
           # (linuxdeploy-plugin-qt, no extension).
           curl -fsSL -o "$LD_DIR/linuxdeploy-plugin-qt" \
             https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          # AppImageKit's appimagetool (used to build the final AppImage with
+          # gzip compression — see comment below).
+          curl -fsSL -o "$LD_DIR/appimagetool" \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x "$LD_DIR"/*
           # The repo's dukto.desktop hardcodes Exec=/usr/bin/dukto and
           # carries the non-standard "Application" category — generate a
@@ -275,14 +279,21 @@ jobs:
           Categories=Network;
           EOF
           export PATH="$LD_DIR:$PATH"
+          # Build AppDir only — don't let linuxdeploy run its bundled
+          # appimagetool. Its current default is zstd compression, which
+          # the AppImage runtime baked into the produced binary cannot
+          # decompress ("Squashfs image uses (null) compression"), so the
+          # resulting AppImage refuses to launch on any host.
           "$LD_DIR/linuxdeploy.AppImage" \
             --appdir build/AppDir \
             --executable build/dukto \
             --desktop-file build/dukto.desktop \
             --icon-file dukto.png \
-            --plugin qt \
-            --output appimage
-          mv Dukto-*.AppImage build/dukto-linux-amd64.AppImage
+            --plugin qt
+          # Pack the AppDir with gzip compression — universally supported
+          # by every released AppImage runtime.
+          ARCH=x86_64 "$LD_DIR/appimagetool" --comp gzip --no-appstream \
+            build/AppDir build/dukto-linux-amd64.AppImage
 
       - name: Package
         id: pkg
@@ -360,6 +371,8 @@ jobs:
             https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           curl -fsSL -o "$LD_DIR/linuxdeploy-plugin-qt" \
             https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          curl -fsSL -o "$LD_DIR/appimagetool" \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x "$LD_DIR"/*
           cat > build/dukto.desktop <<'EOF'
           [Desktop Entry]
@@ -372,14 +385,17 @@ jobs:
           Categories=Network;
           EOF
           export PATH="$LD_DIR:$PATH"
+          # See qt6 job — linuxdeploy builds the AppDir; appimagetool packs
+          # it with gzip (linuxdeploy's bundled appimagetool defaults to
+          # zstd, which the AppImage runtime can't decompress).
           "$LD_DIR/linuxdeploy.AppImage" \
             --appdir build/AppDir \
             --executable build/dukto \
             --desktop-file build/dukto.desktop \
             --icon-file dukto.png \
-            --plugin qt \
-            --output appimage
-          mv Dukto-*.AppImage build/dukto-linux-amd64.AppImage
+            --plugin qt
+          ARCH=x86_64 "$LD_DIR/appimagetool" --comp gzip --no-appstream \
+            build/AppDir build/dukto-linux-amd64.AppImage
 
       - name: Package
         id: pkg
