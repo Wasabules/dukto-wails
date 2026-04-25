@@ -67,12 +67,10 @@ jobs:
       - name: wails build
         working-directory: wails
         shell: bash
-        # Linux: Wails defaults to webkit2gtk-4.0 (gone from Ubuntu 24.04);
-        # the webkit2_41 build tag selects libwebkit2gtk-4.1 instead.
-        run: |
-          TAGS=""
-          if [[ "$RUNNER_OS" == "Linux" ]]; then TAGS="-tags webkit2_41"; fi
-          wails build -clean -platform ${{ matrix.platform }} $TAGS
+        # webkit2_41 build tag is set in wails/wails.json; it routes the
+        # Linux build to libwebkit2gtk-4.1 (Ubuntu 24.04+ ships only 4.1)
+        # and is a no-op on Windows/macOS.
+        run: wails build -clean -platform ${{ matrix.platform }}
 
       - name: Upload artifact
         if: success()

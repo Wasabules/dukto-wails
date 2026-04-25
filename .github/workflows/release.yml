@@ -140,10 +140,8 @@ jobs:
       - name: wails build
         working-directory: wails
         shell: bash
-        run: |
-          TAGS=""
-          if [[ "$RUNNER_OS" == "Linux" ]]; then TAGS="-tags webkit2_41"; fi
-          wails build -clean -platform ${{ matrix.platform }} $TAGS
+        # webkit2_41 build tag is set in wails/wails.json; no-op outside Linux.
+        run: wails build -clean -platform ${{ matrix.platform }}
 
       - name: Package
         id: pkg
