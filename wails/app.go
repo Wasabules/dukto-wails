@@ -71,6 +71,12 @@ type App struct {
 	pendingMu       sync.Mutex
 	pendingSessions map[string]chan bool
 	pendingSeq      uint64
+
+	// modeMu guards lastSessionEncrypted — set right after a Server.Upgrade
+	// hook runs, read by handleReceiveEvent so the audit log can stamp the
+	// session with kind=ENCRYPTED vs CLEARTEXT. Reset on session end.
+	modeMu               sync.Mutex
+	lastSessionEncrypted bool
 }
 
 // NewApp creates the App and loads persistent settings. If loading fails

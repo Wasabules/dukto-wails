@@ -102,6 +102,7 @@
     lastSeen,
     peerList,
     peersByKey,
+    refreshPeers,
     selectedKey,
     sortedPeers,
     upsertPeer,
@@ -958,6 +959,7 @@
     onToggleBroadcastPick={toggleBroadcastPick}
     onRenamePeer={promptRenamePeer}
     onTrustPeer={trustPeer}
+    onPairChange={refreshPeers}
     onToggleBroadcastMode={(on) => broadcastMode.set(on)}
   />
 

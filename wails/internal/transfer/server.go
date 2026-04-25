@@ -43,6 +43,23 @@ type Server struct {
 	// list, rate-limiting, audit logging).
 	Allow func(conn net.Conn) bool
 
+	// Upgrade, if non-nil, runs right after Allow and before Receiver.Handle.
+	// It is given the raw conn and may either:
+	//   - return the same conn (legacy session — bytes parsed as a
+	//     SessionHeader directly), or
+	//   - return a wrapped conn carrying the encrypted v2 transport, or
+	//   - return a non-nil error to abort the session (e.g. a refused
+	//     handshake or a fingerprint mismatch).
+	// The bool out-param is reported on the audit log via the OnSessionMode
+	// hook (true == encrypted v2, false == legacy cleartext) so the UI
+	// can render the correct icon for that activity entry.
+	Upgrade func(conn net.Conn) (net.Conn, bool, error)
+
+	// OnSessionMode, if non-nil, is invoked once after Upgrade and before
+	// Handle, communicating whether the accepted session is encrypted.
+	// Defaults to a no-op.
+	OnSessionMode func(encrypted bool)
+
 	inFlight atomic.Bool
 
 	mu sync.Mutex
@@ -116,6 +133,30 @@ func (s *Server) handle(ctx context.Context, conn net.Conn) {
 		}
 		return
 	}
+
+	sessConn := conn
+	encrypted := false
+	if s.Upgrade != nil {
+		upgraded, isEncrypted, uerr := s.Upgrade(conn)
+		if uerr != nil {
+			if s.OnAcceptError != nil {
+				s.OnAcceptError(uerr)
+			}
+			return
+		}
+		if upgraded != nil {
+			sessConn = upgraded
+			// Make sure the wrapped session also closes when handle returns.
+			if upgraded != conn {
+				defer upgraded.Close()
+			}
+		}
+		encrypted = isEncrypted
+	}
+	if s.OnSessionMode != nil {
+		s.OnSessionMode(encrypted)
+	}
+
 	// Scope a cancellable context to this session so the UI can abort mid
 	// transfer without closing the listener. Handle already closes the
 	// connection when its ctx is cancelled.
@@ -127,7 +168,7 @@ func (s *Server) handle(ctx context.Context, conn net.Conn) {
 	if s.OnSessionEnd != nil {
 		defer s.OnSessionEnd()
 	}
-	if err := rc.Handle(sessCtx, conn); err != nil && s.OnAcceptError != nil {
+	if err := rc.Handle(sessCtx, sessConn); err != nil && s.OnAcceptError != nil {
 		s.OnAcceptError(err)
 	}
 }

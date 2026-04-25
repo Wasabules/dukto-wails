@@ -21,6 +21,13 @@ type Sender struct {
 	// is throttled — see progressStride.
 	OnProgress ProgressFunc
 
+	// Upgrade, if set, is invoked by Dial right after dialing and before
+	// any session bytes are written. It can return a wrapped net.Conn —
+	// the Dukto v2 tunnel installs a Noise XX session here so subsequent
+	// writes go through ChaCha20-Poly1305. Returning a non-nil error
+	// closes the dialled conn and aborts Dial.
+	Upgrade func(net.Conn) (net.Conn, error)
+
 	// bytesSent is the running counter shared across counting writers during
 	// a single Send() call. Reset per session in Send.
 	bytesSent int64
@@ -103,14 +110,30 @@ func sendFile(sw *Writer, s Source) error {
 }
 
 // Dial connects to peer and streams the session to the TCP socket, then
-// half-closes writes. Cancelling ctx closes the connection.
+// half-closes writes. Cancelling ctx closes the connection. When Upgrade
+// is set on the Sender it runs after the dial completes, wrapping the
+// raw conn in a v2 Noise session before Send is called.
 func (s *Sender) Dial(ctx context.Context, peer netip.AddrPort, sources []Source, hdr protocol.SessionHeader) error {
 	dialer := net.Dialer{}
-	conn, err := dialer.DialContext(ctx, "tcp4", peer.String())
+	rawConn, err := dialer.DialContext(ctx, "tcp4", peer.String())
 	if err != nil {
 		return fmt.Errorf("transfer: dial %s: %w", peer, err)
 	}
-	defer conn.Close()
+	defer rawConn.Close()
+
+	conn := rawConn
+	if s.Upgrade != nil {
+		upgraded, uerr := s.Upgrade(rawConn)
+		if uerr != nil {
+			return fmt.Errorf("transfer: upgrade: %w", uerr)
+		}
+		conn = upgraded
+		// If Upgrade returned a different conn (e.g. tunnel.Session
+		// wrapping the raw socket), make sure we close it on exit too.
+		if upgraded != rawConn {
+			defer upgraded.Close()
+		}
+	}
 
 	done := make(chan struct{})
 	defer close(done)
@@ -131,8 +154,9 @@ func (s *Sender) Dial(ctx context.Context, peer netip.AddrPort, sources []Source
 	}
 	// The Qt receiver stops after byte accounting (§3.5), so we can half-close
 	// to signal end-of-send. Ignore errors — the receiver may have closed
-	// first.
-	if tcp, ok := conn.(*net.TCPConn); ok {
+	// first. The half-close has to be done on the *raw* TCP socket, not on
+	// the v2 session wrapper which has no notion of FIN.
+	if tcp, ok := rawConn.(*net.TCPConn); ok {
 		_ = tcp.CloseWrite()
 	}
 	return nil

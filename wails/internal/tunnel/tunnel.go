@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"time"
 
 	"github.com/flynn/noise"
 )
@@ -258,6 +259,22 @@ func (s *Session) Read(p []byte) (int, error) {
 
 // Close shuts down the underlying connection.
 func (s *Session) Close() error { return s.conn.Close() }
+
+// LocalAddr / RemoteAddr / Set*Deadline forward to the underlying
+// connection so a Session can substitute for a net.Conn anywhere the
+// existing transfer code expects one.
+
+func (s *Session) LocalAddr() net.Addr  { return s.conn.LocalAddr() }
+func (s *Session) RemoteAddr() net.Addr { return s.conn.RemoteAddr() }
+func (s *Session) SetDeadline(t time.Time) error {
+	return s.conn.SetDeadline(t)
+}
+func (s *Session) SetReadDeadline(t time.Time) error {
+	return s.conn.SetReadDeadline(t)
+}
+func (s *Session) SetWriteDeadline(t time.Time) error {
+	return s.conn.SetWriteDeadline(t)
+}
 
 // writeFrame writes a 2-byte LE length prefix followed by data.
 func writeFrame(conn net.Conn, data []byte) error {

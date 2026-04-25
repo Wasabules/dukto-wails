@@ -37,4 +37,8 @@ type PeerView struct {
 	Signature   string `json:"signature"`
 	V2Capable   bool   `json:"v2Capable"`
 	Fingerprint string `json:"fingerprint,omitempty"`
+	// Paired is true when the peer's fingerprint is in our TOFU table.
+	// Outbound transfers to a paired peer run over Noise XX; legacy
+	// transfers are still possible and stay decrypted-on-the-wire.
+	Paired bool `json:"paired"`
 }
