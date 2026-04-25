@@ -517,24 +517,31 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Unit tests + assemble
-        run: ./gradlew test assembleRelease
+        # Both flavours so users have an installable APK today (debug is
+        # signed with the debug keystore — works on any device without
+        # extra setup) and a release APK ready to be signed out-of-band
+        # once a real keystore exists.
+        run: ./gradlew test assembleDebug assembleRelease
 
-      - name: Rename APK
+      - name: Rename APKs
         id: pkg
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
-          SRC="$(find app/build/outputs/apk/release -name '*-unsigned.apk' -o -name '*.apk' | head -n1)"
-          test -n "$SRC" || { echo "no APK produced"; exit 1; }
-          OUT="dukto-android-native-${VERSION}-unsigned.apk"
-          cp "$SRC" "$OUT"
-          echo "path=android-native/$OUT" >> "$GITHUB_OUTPUT"
+          DBG_SRC="$(find app/build/outputs/apk/debug -name '*.apk' | head -n1)"
+          REL_SRC="$(find app/build/outputs/apk/release -name '*.apk' | head -n1)"
+          test -n "$DBG_SRC" -a -n "$REL_SRC" || { echo "missing APK"; exit 1; }
+          mkdir -p out
+          cp "$DBG_SRC" "out/dukto-android-native-${VERSION}-debug-signed.apk"
+          cp "$REL_SRC" "out/dukto-android-native-${VERSION}-release-unsigned.apk"
+          ls out
+          echo "path=android-native/out" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
         with:
           name: release-android-native
-          path: ${{ steps.pkg.outputs.path }}
+          path: ${{ steps.pkg.outputs.path }}/*
           if-no-files-found: error
           retention-days: 14
 
