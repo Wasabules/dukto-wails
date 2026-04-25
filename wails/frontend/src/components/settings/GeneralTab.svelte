@@ -14,6 +14,15 @@
   // force the matching theme regardless of OS.
   export let themeMode: 'system' | 'light' | 'dark' = 'system';
 
+  // Long-term identity fingerprint (16 base32 chars, formatted as
+  // XXXX-XXXX-XXXX-XXXX). Empty if the keypair couldn't be loaded.
+  export let fingerprint: string = '';
+
+  async function copyFingerprint() {
+    if (!fingerprint) return;
+    try { await navigator.clipboard.writeText(fingerprint); } catch (e) { /* no-op */ }
+  }
+
   export let onBuddyNameChange: (name: string) => void = () => {};
   export let onCommitBuddyName: () => void = () => {};
   export let onPickDest: () => void = () => {};
@@ -114,6 +123,20 @@
   />
   Keep running when window closes (relaunch to show)
 </label>
+{#if fingerprint}
+  <label>
+    Identity fingerprint
+    <div class="dest-row">
+      <code class="dest" title={fingerprint}>{fingerprint}</code>
+      <button class="ghost" type="button" on:click={copyFingerprint}>Copy</button>
+    </div>
+    <small class="hint">
+      A long-term Ed25519 key generated for this install. Used today only as a stable
+      ID; will anchor encrypted transfers in a future release. Different from the buddy
+      name — surviving a rename. See docs/SECURITY_v2.md.
+    </small>
+  </label>
+{/if}
 {#if qrData}
   <div class="qr">
     <div class="addrs-title">Your signature</div>

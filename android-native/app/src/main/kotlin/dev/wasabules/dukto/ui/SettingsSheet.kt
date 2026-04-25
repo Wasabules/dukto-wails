@@ -71,6 +71,9 @@ fun SettingsSheet(
     onMaxActivityChange: (Int) -> Unit,
     onClearActivity: () -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit,
+    biometricAvailable: Boolean,
+    onBiometricLockChange: (Boolean) -> Unit,
+    fingerprint: String,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -112,6 +115,10 @@ fun SettingsSheet(
                     singleLine = true,
                 )
                 Hint("Empty = use the device name. Changes take effect on the next discovery broadcast.")
+                if (fingerprint.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    FingerprintRow(fingerprint)
+                }
             }
 
             // — Appearance
@@ -159,6 +166,17 @@ fun SettingsSheet(
                     subtitle = "Asks before accepting a session from a buddy you haven't approved yet (60 s timeout).",
                     checked = settings.confirmUnknownPeers,
                     onCheckedChange = onConfirmUnknownPeersChange,
+                )
+                ToggleRow(
+                    title = "Biometric unlock",
+                    subtitle = if (biometricAvailable)
+                        "Verify your fingerprint or face every time the app comes to the foreground."
+                    else
+                        "Disabled — no fingerprint or face is enrolled on this device.",
+                    checked = settings.biometricLockEnabled && biometricAvailable,
+                    onCheckedChange = { v ->
+                        if (biometricAvailable) onBiometricLockChange(v)
+                    },
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
@@ -310,6 +328,45 @@ private fun Hint(text: String) {
         text,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/** Identity fingerprint row. A 16-char base32 code (XXXX-XXXX-XXXX-XXXX) +
+ *  Copy button. Surfaces the long-term Ed25519 key — same string the Wails
+ *  desktop shows in its General settings. Used today as a stable per-install
+ *  identifier (survives buddy-name renames); will anchor encrypted transfers
+ *  in a future release. See docs/SECURITY_v2.md. */
+@Composable
+private fun FingerprintRow(fingerprint: String) {
+    val ctx = LocalContext.current
+    Text("Identity fingerprint", style = MaterialTheme.typography.titleSmall)
+    Spacer(Modifier.height(6.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            Text(
+                fingerprint,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.size(8.dp))
+        TextButton(onClick = {
+            val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("Dukto fingerprint", fingerprint))
+        }) { Text("Copy") }
+    }
+    Hint(
+        "Long-term Ed25519 key generated for this install. Used today only as a stable " +
+            "ID; will anchor encrypted transfers in a future release.",
     )
 }
 

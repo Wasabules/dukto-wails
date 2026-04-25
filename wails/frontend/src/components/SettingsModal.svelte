@@ -59,6 +59,7 @@
   export let onClearAvatar: () => void = () => {};
   export let themeMode: 'system' | 'light' | 'dark' = 'system';
   export let onThemeModeChange: (mode: 'system' | 'light' | 'dark') => void = () => {};
+  export let fingerprint: string = '';
   export let onToggleNotifications: (on: boolean) => void = () => {};
   export let onToggleTray: (on: boolean) => void = () => {};
 
@@ -166,6 +167,7 @@
           {avatarUrl}
           {hasCustomAvatar}
           {themeMode}
+          {fingerprint}
           {onBuddyNameChange}
           {onCommitBuddyName}
           {onPickDest}

@@ -76,6 +76,7 @@ export const hasCustomAvatar = () => App.HasCustomAvatar() as Promise<boolean>;
 export type ThemeMode = 'system' | 'light' | 'dark';
 export const getTheme = () => App.Theme() as Promise<ThemeMode>;
 export const setTheme = (mode: ThemeMode) => App.SetTheme(mode);
+export const getFingerprint = () => App.Fingerprint() as Promise<string>;
 export const setDestDir = (dir: string) => App.SetDestDir(dir);
 export const buddyName = () => App.BuddyName();
 export const setBuddyName = (name: string) => App.SetBuddyName(name);

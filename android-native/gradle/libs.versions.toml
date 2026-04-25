@@ -8,6 +8,9 @@ activityCompose = "1.9.3"
 coroutines = "1.10.1"
 documentfile = "1.0.1"
 coil = "2.7.0"
+biometric = "1.1.0"
+securityCrypto = "1.1.0-alpha06"
+eddsa = "0.3.0"
 junit = "4.13.2"
 
 [libraries]
@@ -21,6 +24,9 @@ androidx-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 androidx-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 androidx-material3 = { group = "androidx.compose.material3", name = "material3" }
 androidx-documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentfile" }
+androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "biometric" }
+androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
+i2p-eddsa = { group = "net.i2p.crypto", name = "eddsa", version.ref = "eddsa" }
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }

@@ -41,6 +41,8 @@ export function ExportHistory(arg1:string,arg2:string):Promise<string>;
 
 export function FileHash(arg1:string):Promise<string>;
 
+export function Fingerprint():Promise<string>;
+
 export function ForgetApprovedPeers():Promise<void>;
 
 export function HasCustomAvatar():Promise<boolean>;

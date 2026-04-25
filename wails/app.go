@@ -18,6 +18,7 @@ import (
 	"dukto/internal/audit"
 	"dukto/internal/avatar"
 	"dukto/internal/discovery"
+	"dukto/internal/identity"
 	"dukto/internal/settings"
 	"dukto/internal/transfer"
 )
@@ -34,6 +35,12 @@ type App struct {
 	eventsStop   chan struct{}
 
 	settings *settings.Store
+
+	// identity is this install's long-term Ed25519 keypair. Currently only
+	// used to surface a fingerprint in Settings (M1 of the v2 encrypted
+	// overlay — see docs/SECURITY_v2.md). Future milestones use it to sign
+	// discovery datagrams (M2) and authenticate Noise XX handshakes (M3).
+	identity identity.Identity
 
 	// cancelMu guards sendCancel / receiveCancel, which are set while a
 	// transfer is in flight and cleared when it finishes. The UI's cancel
@@ -97,6 +104,17 @@ func NewApp() *App {
 		_ = store.Update(func(v *settings.Values) { v.DestPath = defaultDestDir() })
 	}
 	a.audit = audit.Open(filepath.Join(filepath.Dir(path), "audit.log"))
+
+	// Identity. Failure here is non-fatal at this milestone: M1 only uses
+	// the fingerprint for display, so the rest of the app stays usable
+	// even if we couldn't load/generate the key. Logged loudly so a real
+	// production build won't silently lose the key.
+	id, err := identity.LoadOrGenerate(filepath.Join(filepath.Dir(path), "identity.key"))
+	if err != nil {
+		log.Printf("dukto: identity: %v — running without an Ed25519 keypair", err)
+	} else {
+		a.identity = id
+	}
 	return a
 }
 

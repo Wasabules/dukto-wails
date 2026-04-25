@@ -7,6 +7,8 @@ import android.net.Uri
 import dev.wasabules.dukto.audit.AuditLog
 import dev.wasabules.dukto.avatar.AvatarServer
 import dev.wasabules.dukto.avatar.defaultAvatarPng
+import dev.wasabules.dukto.identity.Identity
+import dev.wasabules.dukto.identity.loadOrGenerate as loadOrGenerateIdentity
 import java.io.ByteArrayOutputStream
 import java.io.File
 import dev.wasabules.dukto.discovery.Messenger
@@ -69,6 +71,18 @@ class DuktoEngine(private val app: Context) {
     }
 
     val pendingPeerRequests: StateFlow<List<PendingRequest>> = policy.pending
+
+    // ── identity (M1) ────────────────────────────────────────────────────
+
+    /** Long-term Ed25519 keypair for the v2 encrypted overlay. May be null
+     *  if loading or generating failed at startup; callers should treat the
+     *  fingerprint as empty in that case rather than crash. */
+    val identity: Identity? = runCatching {
+        loadOrGenerateIdentity(app, File(app.filesDir, "identity.key"))
+    }.getOrNull()
+
+    /** User-visible 16-char fingerprint, or empty if [identity] is null. */
+    val identityFingerprint: String get() = identity?.fingerprint.orEmpty()
 
     // ── avatar (local + custom) ──────────────────────────────────────────────
 
@@ -190,6 +204,9 @@ class DuktoEngine(private val app: Context) {
     fun setMaxSessionSizeMB(mb: Int) = settings.update { it.copy(maxSessionSizeMB = mb.coerceAtLeast(0)) }
     fun setThemeMode(mode: dev.wasabules.dukto.settings.ThemeMode) =
         settings.update { it.copy(themeMode = mode) }
+
+    fun setBiometricLockEnabled(enabled: Boolean) =
+        settings.update { it.copy(biometricLockEnabled = enabled) }
 
     fun setMaxActivityEntries(n: Int) {
         val capped = n.coerceAtLeast(0)

@@ -245,6 +245,20 @@ func (a *App) SetNotifications(enabled bool) error {
 	return a.settings.Update(func(v *settings.Values) { v.Notifications = enabled })
 }
 
+// Fingerprint returns the user-visible 16-character identity fingerprint
+// (XXXX-XXXX-XXXX-XXXX) derived from this install's long-term Ed25519
+// public key. Empty string if the identity failed to load (logged at
+// startup) — UI should hide the field rather than show a placeholder.
+//
+// The keypair is generated once on first run and persisted under
+// <UserConfigDir>/dukto/identity.key. See docs/SECURITY_v2.md.
+func (a *App) Fingerprint() string {
+	if len(a.identity.Public) == 0 {
+		return ""
+	}
+	return a.identity.Fingerprint()
+}
+
 // Theme returns the current theme override as one of "system", "light",
 // "dark". Maps the legacy AutoTheme + DarkMode boolean pair onto a single
 // tri-state so the frontend doesn't have to deal with two flags.
