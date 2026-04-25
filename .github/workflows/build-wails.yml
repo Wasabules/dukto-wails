@@ -72,7 +72,7 @@ jobs:
         run: |
           TAGS=""
           if [[ "$RUNNER_OS" == "Linux" ]]; then TAGS="-tags webkit2_41"; fi
-          wails build -clean -s -platform ${{ matrix.platform }} $TAGS
+          wails build -clean -platform ${{ matrix.platform }} $TAGS
 
       - name: Upload artifact
         if: success()

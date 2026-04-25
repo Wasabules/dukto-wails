@@ -143,7 +143,7 @@ jobs:
         run: |
           TAGS=""
           if [[ "$RUNNER_OS" == "Linux" ]]; then TAGS="-tags webkit2_41"; fi
-          wails build -clean -s -platform ${{ matrix.platform }} $TAGS
+          wails build -clean -platform ${{ matrix.platform }} $TAGS
 
       - name: Package
         id: pkg
@@ -264,6 +264,12 @@ jobs:
           # gzip compression — see comment below).
           curl -fsSL -o "$LD_DIR/appimagetool" \
             https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          # The legacy AppImageKit runtime is dynamically linked and dlopen()s
+          # libfuse.so.2 at startup. Ubuntu 24.04+ ships only fuse3, so the
+          # AppImage fails with "AppImages require FUSE to run". The static
+          # type2-runtime has no such dependency.
+          curl -fsSL -o "$LD_DIR/runtime-x86_64" \
+            https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64
           chmod +x "$LD_DIR"/*
           # The repo's dukto.desktop hardcodes Exec=/usr/bin/dukto and
           # carries the non-standard "Application" category — generate a
@@ -295,9 +301,10 @@ jobs:
             --desktop-file build/dukto.desktop \
             --icon-file dukto.png \
             --plugin qt
-          # Pack the AppDir with gzip compression — universally supported
-          # by every released AppImage runtime.
+          # Pack the AppDir with gzip compression (universal) and the
+          # static type2-runtime (no libfuse2 dependency).
           ARCH=x86_64 "$LD_DIR/appimagetool" --comp gzip --no-appstream \
+            --runtime-file "$LD_DIR/runtime-x86_64" \
             build/AppDir build/dukto-linux-amd64.AppImage
 
       - name: Package
@@ -378,6 +385,9 @@ jobs:
             https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
           curl -fsSL -o "$LD_DIR/appimagetool" \
             https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          # See qt6 job — static type2-runtime to avoid the libfuse2 dep.
+          curl -fsSL -o "$LD_DIR/runtime-x86_64" \
+            https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64
           chmod +x "$LD_DIR"/*
           cat > build/dukto.desktop <<'EOF'
           [Desktop Entry]
@@ -404,6 +414,7 @@ jobs:
             --icon-file dukto.png \
             --plugin qt
           ARCH=x86_64 "$LD_DIR/appimagetool" --comp gzip --no-appstream \
+            --runtime-file "$LD_DIR/runtime-x86_64" \
             build/AppDir build/dukto-linux-amd64.AppImage
 
       - name: Package
