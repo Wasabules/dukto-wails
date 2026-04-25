@@ -279,6 +279,11 @@ jobs:
           Categories=Network;
           EOF
           export PATH="$LD_DIR:$PATH"
+          # Dukto's QML sources are compiled into the binary as a Qt
+          # resource (qml.qrc), so linuxdeploy-plugin-qt's static analysis
+          # of the binary cannot see "import QtQuick.Controls" etc. Point
+          # it at the on-disk QML tree so it bundles the right modules.
+          export QML_SOURCES_PATHS="$GITHUB_WORKSPACE/qml/new:$GITHUB_WORKSPACE/qml/common"
           # Build AppDir only — don't let linuxdeploy run its bundled
           # appimagetool. Its current default is zstd compression, which
           # the AppImage runtime baked into the produced binary cannot
@@ -385,6 +390,10 @@ jobs:
           Categories=Network;
           EOF
           export PATH="$LD_DIR:$PATH"
+          # Dukto's QML sources are loaded from a Qt resource (qml.qrc);
+          # point the Qt plugin at the on-disk QML tree so it can detect
+          # which modules to bundle.
+          export QML_SOURCES_PATHS="$GITHUB_WORKSPACE/qml/new:$GITHUB_WORKSPACE/qml/common"
           # See qt6 job — linuxdeploy builds the AppDir; appimagetool packs
           # it with gzip (linuxdeploy's bundled appimagetool defaults to
           # zstd, which the AppImage runtime can't decompress).
