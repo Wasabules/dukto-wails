@@ -38,6 +38,12 @@ func main() {
 		OnBeforeClose:    app.onBeforeClose,
 		DragAndDrop: &options.DragAndDrop{
 			EnableFileDrop: true,
+			// On Linux/WebKitGTK, the WebView handles file drops first and
+			// navigates to the dropped file (e.g. opens an image in-app)
+			// before Wails sees the event. DisableWebViewDrop pulls drop
+			// handling up to the GTK window so Wails can extract the paths
+			// and forward them via OnFileDrop. No-op on Windows/macOS.
+			DisableWebViewDrop: true,
 		},
 		SingleInstanceLock: &options.SingleInstanceLock{
 			// Arbitrary but stable UUID: the lock's job is to match sibling
