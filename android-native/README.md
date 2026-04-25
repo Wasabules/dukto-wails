@@ -82,42 +82,46 @@ Sources of truth to mirror:
 
 ### Phase 1 — wire format port
 
-- [ ] `protocol`: `BuddyMessage` encode/decode (UDP datagrams 0x01–0x05)
-- [ ] `protocol`: `SessionHeader` + `ElementHeader` streaming codec (TCP)
-- [ ] `protocol`: `BuildSignature("<user> at <host> (Android)")`
-- [ ] Cross-stack fixture tests: feed the same `tests/fixtures/*.bin` the Go side uses (see `docs/PROTOCOL.md` §7), assert byte-for-byte parity.
+- [x] `protocol`: `BuddyMessage` encode/decode (UDP datagrams 0x01–0x05)
+- [x] `protocol`: `SessionHeader` + `ElementHeader` streaming codec (TCP)
+- [x] `protocol`: `buildSignature("<user> at <host> (Android)")`
+- [x] JVM round-trip + invalid-input tests (18/18)
+- [ ] Cross-stack fixture tests: feed the same `tests/fixtures/*.bin` the Go side uses — left for follow-up once Qt fixture generator runs in CI.
 
 ### Phase 2 — networking
 
-- [ ] `discovery.Messenger`: HELLO/GOODBYE, self-echo suppression, per-source HELLO cooldown, broadcast-storm guard, `WifiManager.MulticastLock`
-- [ ] `transfer.Server`: TCP server bound to `0.0.0.0:4644`, accept loop with policy hook
-- [ ] `transfer.Receiver`: streaming parse → `DocumentFile` outputs in user-selected destination tree (SAF)
-- [ ] `transfer.Sender`: send files / folders / text / clipboard
+- [x] `discovery.Messenger`: HELLO/GOODBYE, self-echo suppression, periodic broadcast, `WifiManager.MulticastLock`
+- [x] `transfer.Server`: TCP server on port 4644, accept loop, per-session coroutines
+- [x] `transfer.Receiver`: streaming parse → files under `getExternalFilesDir(DIRECTORY_DOWNLOADS)/dukto-<ts>-<src>/`
+- [x] `transfer.Sender`: text snippet + multi-URI files
+- [ ] Per-source HELLO cooldown / broadcast-storm guard (security hardening, can ride on top later)
 - [ ] Avatar HTTP side-channel on `udp_port + 1`
+- [ ] SAF tree picker for destination (currently uses app-private external storage — works without permissions but less discoverable)
+- [ ] Folder send (recursive directory traversal of a SAF tree)
 
 ### Phase 3 — UI (Compose)
 
-- [ ] Buddies / peer list (mirror `qml/new/BuddiesPage.qml`)
-- [ ] Recent activity list
-- [ ] Profile: editable buddy name + avatar (camera / gallery picker)
-- [ ] Send composer: file picker (SAF), folder picker, text input, clipboard
-- [ ] In-progress transfer screen: speed / ETA / cancel
-- [ ] Settings: destination tree (SAF), notifications, theme
+- [x] Top-level `DuktoScreen` with peer list + recent activity + in-flight progress bar
+- [x] Settings bottom sheet (display name)
+- [x] Send bottom sheet (text snippet + file picker entry point)
+- [x] Material 3 + Material You dynamic colors (Android 12+)
+- [ ] Profile avatar (camera/gallery picker, expose via the existing avatar HTTP endpoint once Phase 2 ships it)
+- [ ] Cancel in-flight transfer
 - [ ] About / terms-of-use first-run screen
 
 ### Phase 4 — Android plumbing
 
-- [ ] Foreground service for active transfers (`FOREGROUND_SERVICE_DATA_SYNC`)
-- [ ] Notification channel + rich notifications with progress
-- [ ] Share intent: `ACTION_SEND` / `ACTION_SEND_MULTIPLE` → preselect peer
-- [ ] Notification permission flow (Android 13+)
-- [ ] System dark mode + Material You dynamic colors (already wired)
+- [x] Notification channel created at app start
+- [x] Notification permission request on Android 13+
+- [x] Share intent: `ACTION_SEND` / `ACTION_SEND_MULTIPLE` → URIs surfaced as a "ready to send" banner
+- [ ] Foreground service for active transfers (`FOREGROUND_SERVICE_DATA_SYNC`) — current implementation runs server in a process-scope coroutine, fine for foreground, fragile in background; add the service when Phase 2 SAF tree-picker lands
+- [ ] Per-transfer progress notifications
 
 ### Phase 5 — release
 
-- [ ] CI workflow under `.github/workflows/build-android-native.yml` (parallel of `build-android.yml`)
-- [ ] Sign with a release keystore (out-of-band, like the Qt APKs are today)
-- [ ] Update `release.yml` to ship `dukto-android-native-x.y.z-{abi}.apk`
+- [x] `.github/workflows/build-android-native.yml` — debug + unsigned-release APKs as artifacts on push
+- [x] `release.yml`: `android-native` job that ships `dukto-android-native-x.y.z-unsigned.apk` alongside the Qt APKs on tag push
+- [ ] Signing keystore (out-of-band, like the Qt APKs)
 - [ ] Once usage confirms parity → drop the Qt build (see [`docs/PORT_SCOPE.md`](../docs/PORT_SCOPE.md) "Scope of the Qt6 codebase after the port")
 
 ## Testing alongside the Qt APK

@@ -496,9 +496,51 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  android-native:
+    name: Android native (Kotlin/Compose)
+    needs: [prepare, test]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android-native
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests + assemble
+        run: ./gradlew test assembleRelease
+
+      - name: Rename APK
+        id: pkg
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          SRC="$(find app/build/outputs/apk/release -name '*-unsigned.apk' -o -name '*.apk' | head -n1)"
+          test -n "$SRC" || { echo "no APK produced"; exit 1; }
+          OUT="dukto-android-native-${VERSION}-unsigned.apk"
+          cp "$SRC" "$OUT"
+          echo "path=android-native/$OUT" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-android-native
+          path: ${{ steps.pkg.outputs.path }}
+          if-no-files-found: error
+          retention-days: 14
+
   publish:
     name: Publish GitHub release
-    needs: [prepare, wails, qt6, qt5, android]
+    needs: [prepare, wails, qt6, qt5, android, android-native]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
