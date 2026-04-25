@@ -26,23 +26,43 @@ class MainActivity : ComponentActivity() {
     private val app: DuktoApp get() = application as DuktoApp
     private val engine: DuktoEngine get() = app.engine
 
+    /** Peer queued by the most recent action that needs an external picker result. */
+    private var pendingPeer: Peer? = null
+
     private val pickFiles = registerForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris ->
-        uris?.let { selectedUris ->
-            pendingPeer?.let { peer ->
-                engine.sendFiles(peer.address.hostAddress.orEmpty(), peer.port, selectedUris)
-            }
-        }
+        val peer = pendingPeer
         pendingPeer = null
+        if (peer != null && !uris.isNullOrEmpty()) {
+            engine.sendFiles(peer.address.hostAddress.orEmpty(), peer.port, uris)
+        }
+    }
+
+    private val pickFolderToSend = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri: Uri? ->
+        val peer = pendingPeer
+        pendingPeer = null
+        if (peer != null && uri != null) {
+            engine.sendFolder(peer.address.hostAddress.orEmpty(), peer.port, uri)
+        }
+    }
+
+    private val pickDestTree = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            // Persist read+write so we can write to it after process death.
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            runCatching { contentResolver.takePersistableUriPermission(uri, flags) }
+            engine.setDestTreeUri(uri.toString())
+        }
     }
 
     private val askNotificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { /* answer ignored — Material 3 informs the user via OS dialog */ }
-
-    /** Set just before launching the file picker; used to know which peer to send to on result. */
-    private var pendingPeer: Peer? = null
+    ) { /* the OS retains the answer; nothing to do here */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,19 +76,21 @@ class MainActivity : ComponentActivity() {
                 val activity by engine.activity.collectAsState()
                 val inflight by engine.inflight.collectAsState()
                 val profile by engine.profile.collectAsState()
+                val destLabel by engine.destLabel.collectAsState()
 
                 var pendingShare by remember { mutableStateOf<List<Uri>>(emptyList()) }
-                LaunchedEffect(Unit) {
-                    pendingShare = consumeSharedUris()
-                }
+                LaunchedEffect(Unit) { pendingShare = consumeSharedUris() }
 
                 DuktoScreen(
                     profile = profile,
+                    destLabel = destLabel,
                     peers = peers.values.toList(),
                     activity = activity,
                     inflight = inflight,
                     pendingShare = pendingShare,
                     onBuddyNameChange = engine::setBuddyName,
+                    onPickDestFolder = { pickDestTree.launch(null) },
+                    onClearDestFolder = { engine.setDestTreeUri(null) },
                     onSendText = { peer, text ->
                         engine.sendText(peer.address.hostAddress.orEmpty(), peer.port, text)
                     },
@@ -81,6 +103,11 @@ class MainActivity : ComponentActivity() {
                             pickFiles.launch(arrayOf("*/*"))
                         }
                     },
+                    onSendFolder = { peer ->
+                        pendingPeer = peer
+                        pickFolderToSend.launch(null)
+                    },
+                    onCancelInflight = { engine.cancelInflight() },
                 )
             }
         }
@@ -100,7 +127,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Capture URIs from a share intent, if any; consumed on the next composition. */
     private val sharedUris = mutableListOf<Uri>()
 
     private fun handleShareIntent(intent: Intent?) {
@@ -108,10 +134,12 @@ class MainActivity : ComponentActivity() {
         sharedUris.clear()
         when (intent.action) {
             Intent.ACTION_SEND -> intent.data?.let { sharedUris += it } ?: run {
-                @Suppress("DEPRECATION")
                 val u: Uri? = if (Build.VERSION.SDK_INT >= 33) {
                     intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
-                } else intent.getParcelableExtra(Intent.EXTRA_STREAM)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM)
+                }
                 u?.let { sharedUris += it }
             }
             Intent.ACTION_SEND_MULTIPLE -> {
