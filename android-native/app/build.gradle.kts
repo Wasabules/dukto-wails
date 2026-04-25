@@ -14,8 +14,8 @@ android {
         applicationId = "dev.wasabules.dukto"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0-dev"
+        versionCode = 2
+        versionName = "6.3.0"
     }
 
     buildTypes {
