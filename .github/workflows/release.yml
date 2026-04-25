@@ -73,6 +73,12 @@ jobs:
           cache: npm
           cache-dependency-path: wails/frontend/package-lock.json
 
+      # main.go embeds frontend/dist; placeholder lets go vet/test compile
+      # without building the SPA (covered by build-wails / svelte-check).
+      - name: Seed frontend/dist placeholder
+        working-directory: wails
+        run: mkdir -p frontend/dist && touch frontend/dist/.placeholder
+
       - name: go vet + test
         working-directory: wails
         run: |
@@ -134,7 +140,10 @@ jobs:
       - name: wails build
         working-directory: wails
         shell: bash
-        run: wails build -clean -s -platform ${{ matrix.platform }}
+        run: |
+          TAGS=""
+          if [[ "$RUNNER_OS" == "Linux" ]]; then TAGS="-tags webkit2_41"; fi
+          wails build -clean -s -platform ${{ matrix.platform }} $TAGS
 
       - name: Package
         id: pkg
@@ -353,9 +362,14 @@ jobs:
       - name: Configure
         run: |
           set -euo pipefail
-          QT_ANDROID_CMAKE="${QT_INSTALL_DIR}/Qt/${QT_VERSION}/android_${{ matrix.abi }}/bin/qt-cmake"
+          QT_ANDROID_BIN="${QT_INSTALL_DIR}/Qt/${QT_VERSION}/android_${{ matrix.abi }}/bin"
+          QT_HOST_BIN="${QT_INSTALL_DIR}/Qt/${QT_VERSION}/gcc_64/bin"
+          # jurplel/install-qt-action's cache occasionally drops the +x bit
+          # on the Android arch tarball (seen on armv7).
+          chmod -R +x "$QT_ANDROID_BIN" "$QT_HOST_BIN"
+          QT_ANDROID_CMAKE="$QT_ANDROID_BIN/qt-cmake"
           NDK_ROOT="${ANDROID_HOME}/ndk/${NDK_VERSION}"
-          test -x "$QT_ANDROID_CMAKE" || { echo "qt-cmake not found at $QT_ANDROID_CMAKE"; exit 1; }
+          test -f "$QT_ANDROID_CMAKE" || { echo "qt-cmake not found at $QT_ANDROID_CMAKE"; exit 1; }
           "$QT_ANDROID_CMAKE" \
             -S . -B build \
             -DANDROID_NDK_ROOT="$NDK_ROOT" \
