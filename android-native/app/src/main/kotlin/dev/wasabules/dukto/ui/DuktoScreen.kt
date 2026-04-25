@@ -252,12 +252,32 @@ private fun PeerRow(peer: Peer, onClick: () -> Unit) {
             PeerAvatar(peer)
             Spacer(Modifier.size(16.dp))
             Column(Modifier.weight(1f)) {
-                Text(peer.signature, style = MaterialTheme.typography.titleMedium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        peer.signature,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (peer.v2Capable) {
+                        Spacer(Modifier.size(6.dp))
+                        Text(
+                            "🔓",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
                 Text(
                     peer.address.hostAddress.orEmpty(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (peer.v2Capable && peer.fingerprint.isNotEmpty()) {
+                    Text(
+                        peer.fingerprint,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

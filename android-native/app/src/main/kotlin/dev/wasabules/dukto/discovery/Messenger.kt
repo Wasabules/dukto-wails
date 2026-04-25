@@ -3,6 +3,9 @@ package dev.wasabules.dukto.discovery
 import android.content.Context
 import android.net.wifi.WifiManager
 import android.util.Log
+import dev.wasabules.dukto.identity.Identity
+import dev.wasabules.dukto.identity.fingerprintOf
+import dev.wasabules.dukto.identity.verifyEd25519
 import dev.wasabules.dukto.protocol.BuddyMessage
 import dev.wasabules.dukto.protocol.DEFAULT_PORT
 import dev.wasabules.dukto.protocol.MessageType
@@ -34,9 +37,37 @@ data class Peer(
     val address: InetAddress,
     val port: Int,
     val signature: String,
+    /** True once we've received and verified at least one v2 HELLO from this peer. */
+    val v2Capable: Boolean = false,
+    /** Long-term Ed25519 pubkey (32 B) advertised by the peer; null until verified. */
+    val pubKey: ByteArray? = null,
 ) {
     /** Stable identity key — IP + port pair (signature can change as the user renames themselves). */
     val key: String get() = "${address.hostAddress}:$port"
+
+    /** 16-char base32 fingerprint, or empty for v1-only peers. */
+    val fingerprint: String get() = pubKey?.let { fingerprintOf(it) }.orEmpty()
+
+    // Manual equals/hashCode because ByteArray comparisons are by-identity by default.
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is Peer) return false
+        if (address != other.address || port != other.port || signature != other.signature) return false
+        if (v2Capable != other.v2Capable) return false
+        val a = pubKey; val b = other.pubKey
+        if ((a == null) != (b == null)) return false
+        if (a != null && b != null && !a.contentEquals(b)) return false
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var h = address.hashCode()
+        h = 31 * h + port
+        h = 31 * h + signature.hashCode()
+        h = 31 * h + v2Capable.hashCode()
+        h = 31 * h + (pubKey?.contentHashCode() ?: 0)
+        return h
+    }
 }
 
 /** Event emitted by [Messenger] on the [events] flow. */
@@ -61,6 +92,10 @@ class Messenger(
     private val signatureProvider: () -> String,
     private val port: Int = DEFAULT_PORT,
     private val helloIntervalMs: Long = 10_000L,
+    /** When non-null, every HELLO interval also broadcasts a v2 0x06 datagram and
+     *  every reply sends a 0x07 unicast alongside the legacy ones. Inbound
+     *  0x06/0x07 datagrams are accepted only after Ed25519 verification. */
+    private val identity: Identity? = null,
 ) {
     private val scope = CoroutineScope(Dispatchers.IO)
 
@@ -77,6 +112,10 @@ class Messenger(
 
     /** Local IPv4 addresses, refreshed on start and on each broadcast pass. */
     @Volatile private var localAddrs: Set<InetAddress> = emptySet()
+
+    /** Pubkey advertised by each peer that has produced a verified 0x06/0x07.
+     *  Keyed by IP so the legacy 0x04/0x05 branch can stamp v2 capability too. */
+    private val v2Keys: MutableMap<InetAddress, ByteArray> = mutableMapOf()
 
     fun start() {
         if (socket != null) return
@@ -154,15 +193,36 @@ class Messenger(
             MessageType.HelloPortBroadcast,
             MessageType.HelloPortUnicast -> {
                 val peerPort = if (msg.type.hasPort) msg.port else DEFAULT_PORT
-                val peer = Peer(src, peerPort, msg.signature)
+                val knownKey = synchronized(v2Keys) { v2Keys[src]?.copyOf() }
+                val peer = Peer(
+                    src, peerPort, msg.signature,
+                    v2Capable = knownKey != null,
+                    pubKey = knownKey,
+                )
                 upsertPeer(peer)
-                // Reply with unicast HELLO if this was a broadcast.
                 if (msg.type == MessageType.HelloBroadcast || msg.type == MessageType.HelloPortBroadcast) {
                     runCatching { sendHelloUnicast(s, src, peerPort) }
                 }
             }
             MessageType.Goodbye -> {
+                synchronized(v2Keys) { v2Keys.remove(src) }
                 removePeer(src)
+            }
+            MessageType.HelloPortKeyBroadcast,
+            MessageType.HelloPortKeyUnicast -> {
+                val pub = msg.pubKey ?: return
+                val sig = msg.sig ?: return
+                if (!verifyEd25519(pub, msg.signedPayload(), sig)) return
+                synchronized(v2Keys) { v2Keys[src] = pub.copyOf() }
+                val peer = Peer(
+                    src, msg.port, msg.signature,
+                    v2Capable = true,
+                    pubKey = pub.copyOf(),
+                )
+                upsertPeer(peer)
+                if (msg.type == MessageType.HelloPortKeyBroadcast) {
+                    runCatching { sendHelloUnicast(s, src, msg.port) }
+                }
             }
         }
     }
@@ -178,6 +238,15 @@ class Messenger(
                 Log.v(TAG, "broadcast to $bcast failed: ${e.message}")
             }
         }
+        // v2 layer: best-effort 0x06 broadcast alongside the legacy datagram.
+        // Failures are deliberately ignored here so the legacy path keeps
+        // working when the v2 send fails (interface-level issues).
+        identity?.let { id ->
+            val v2Bytes = signedHelloBytes(MessageType.HelloPortKeyBroadcast, sig, id)
+            for (bcast in broadcastAddresses()) {
+                runCatching { s.send(DatagramPacket(v2Bytes, v2Bytes.size, bcast, DEFAULT_PORT)) }
+            }
+        }
     }
 
     private fun sendHelloUnicast(s: DatagramSocket, dst: InetAddress, dstPort: Int) {
@@ -185,6 +254,16 @@ class Messenger(
         val msg = BuddyMessage(helloUnicastType(port), port = port, signature = sig)
         val bytes = msg.serialize()
         s.send(DatagramPacket(bytes, bytes.size, dst, dstPort))
+        identity?.let { id ->
+            val v2Bytes = signedHelloBytes(MessageType.HelloPortKeyUnicast, sig, id)
+            runCatching { s.send(DatagramPacket(v2Bytes, v2Bytes.size, dst, dstPort)) }
+        }
+    }
+
+    private fun signedHelloBytes(type: MessageType, sig: String, id: Identity): ByteArray {
+        val unsigned = BuddyMessage(type, port = port, signature = sig)
+        val signature = id.sign(unsigned.signedPayload())
+        return unsigned.copy(pubKey = id.publicKey.copyOf(), sig = signature).serialize()
     }
 
     private fun sendGoodbye(s: DatagramSocket) {

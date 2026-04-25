@@ -1,12 +1,14 @@
 package main
 
 import (
+	"crypto/ed25519"
 	"fmt"
 	"log"
 	"net/netip"
 	"strings"
 
 	"dukto/internal/discovery"
+	"dukto/internal/identity"
 	"dukto/internal/protocol"
 )
 
@@ -18,13 +20,24 @@ func (a *App) Peers() []PeerView {
 	raw := a.messenger.Peers()
 	out := make([]PeerView, 0, len(raw))
 	for _, p := range raw {
-		out = append(out, PeerView{
-			Address:   p.Addr.String(),
-			Port:      p.Port,
-			Signature: p.Signature,
-		})
+		out = append(out, peerView(p))
 	}
 	return out
+}
+
+// peerView converts a discovery.Peer to its Wails-facing form, including the
+// v2 fingerprint derived from the advertised pubkey.
+func peerView(p discovery.Peer) PeerView {
+	view := PeerView{
+		Address:   p.Addr.String(),
+		Port:      p.Port,
+		Signature: p.Signature,
+		V2Capable: p.V2Capable,
+	}
+	if len(p.PubKey) == ed25519.PublicKeySize {
+		view.Fingerprint = identity.Fingerprint(ed25519.PublicKey(p.PubKey))
+	}
+	return view
 }
 
 // Signature returns the signature this app currently advertises. Useful for

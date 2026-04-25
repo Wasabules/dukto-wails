@@ -55,7 +55,8 @@ class ProtocolTest {
 
     @Test fun parseRejectsUnknownType() {
         assertThrows(InvalidMessageException::class.java) {
-            BuddyMessage.parse(byteArrayOf(0x06, 0x10, 0x00, 0x61))
+            // 0x09 is reserved — anything outside the 0x01..0x07 set must error.
+            BuddyMessage.parse(byteArrayOf(0x09, 0x10, 0x00, 0x61))
         }
     }
 
@@ -70,6 +71,65 @@ class ProtocolTest {
         assertThrows(InvalidMessageException::class.java) {
             BuddyMessage.parse(byteArrayOf(0x01))
         }
+    }
+
+    @Test fun helloPortKeyRoundTripPreservesFields() {
+        val pub = ByteArray(ED25519_PUBLIC_KEY_SIZE) { it.toByte() }
+        val sig = ByteArray(ED25519_SIGNATURE_SIZE) { (0x40 + it).toByte() }
+        val m = BuddyMessage(
+            MessageType.HelloPortKeyBroadcast,
+            port = 5000,
+            signature = "alice at host (Linux)",
+            pubKey = pub,
+            sig = sig,
+        )
+        val data = m.serialize()
+        // type + port_le + pub + sig + utf8(signature)
+        assertEquals(0x06.toByte(), data[0])
+        assertEquals(0x88.toByte(), data[1])
+        assertEquals(0x13.toByte(), data[2])
+        // The pubkey starts at offset 3.
+        assertEquals(pub[0], data[3])
+        assertEquals(pub[31], data[3 + 31])
+        // The signature follows.
+        assertEquals(sig[0], data[3 + 32])
+        assertEquals(sig[63], data[3 + 32 + 63])
+        // Round-trip preserves everything.
+        val parsed = BuddyMessage.parse(data)
+        assertEquals(m, parsed)
+    }
+
+    @Test fun helloPortKeyRejectsTruncatedKeyOrSig() {
+        val pub = ByteArray(ED25519_PUBLIC_KEY_SIZE) { it.toByte() }
+        val sig = ByteArray(ED25519_SIGNATURE_SIZE) { (0x40 + it).toByte() }
+        val data = BuddyMessage(
+            MessageType.HelloPortKeyBroadcast,
+            port = 5000,
+            signature = "x at y (Linux)",
+            pubKey = pub,
+            sig = sig,
+        ).serialize()
+        // Inside the pubkey field (header 1 + 2 = 3, pubkey 32 — cut at 19).
+        assertThrows(InvalidMessageException::class.java) {
+            BuddyMessage.parse(data.copyOfRange(0, 19))
+        }
+        // Inside the sig field (header 1+2+32 = 35, sig 64 — cut at 65).
+        assertThrows(InvalidMessageException::class.java) {
+            BuddyMessage.parse(data.copyOfRange(0, 65))
+        }
+    }
+
+    @Test fun signedPayloadIsLittleEndianPortPlusSignature() {
+        val m = BuddyMessage(
+            MessageType.HelloPortKeyBroadcast,
+            port = 0xABCD,
+            signature = "x",
+        )
+        val payload = m.signedPayload()
+        // 0xABCD LE = 0xCD 0xAB
+        assertEquals(0xCD.toByte(), payload[0])
+        assertEquals(0xAB.toByte(), payload[1])
+        assertEquals('x'.code.toByte(), payload[2])
     }
 
     @Test fun helloBroadcastTypeFollowsPort() {

@@ -1,6 +1,9 @@
 package discovery
 
 import (
+	"bytes"
+	"crypto/ed25519"
+	"crypto/rand"
 	"net/netip"
 	"testing"
 	"time"
@@ -230,4 +233,62 @@ func parseMaskV4(t *testing.T, s string) []byte {
 	t.Helper()
 	a := netip.MustParseAddr(s).As4()
 	return a[:]
+}
+
+func TestHandleDatagram_HelloPortKey_VerifiesAndStampsV2(t *testing.T) {
+	m := newTestMessenger(protocol.DefaultPort, "me at host (Linux)")
+	src := netip.MustParseAddr("10.0.0.7")
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := protocol.SignBuddyMessage(
+		protocol.BuddyMessage{Type: protocol.MsgHelloPortKeyBroadcast, Port: 4644, Signature: "bob at phone (Android)"},
+		pub, priv,
+	)
+
+	m.handleDatagram(msg.Serialize(), src)
+
+	ev := drainEvent(t, m)
+	if ev.Kind != EventFound {
+		t.Fatalf("kind = %v", ev.Kind)
+	}
+	if !ev.Peer.V2Capable {
+		t.Fatal("expected V2Capable to be true on a verified 0x06 datagram")
+	}
+	if !bytes.Equal(ev.Peer.PubKey, pub) {
+		t.Fatal("expected emitted PubKey to match the signing key")
+	}
+
+	// A subsequent legacy HELLO from the same source should now be stamped v2 too.
+	legacy := protocol.BuddyMessage{Type: protocol.MsgHelloBroadcast, Signature: "bob at phone (Android)"}.Serialize()
+	m.handleDatagram(legacy, src)
+	ev2 := drainEvent(t, m)
+	if !ev2.Peer.V2Capable || !bytes.Equal(ev2.Peer.PubKey, pub) {
+		t.Fatalf("legacy HELLO from a v2-known IP should inherit the key, got %+v", ev2.Peer)
+	}
+}
+
+func TestHandleDatagram_HelloPortKey_RejectsBadSignature(t *testing.T) {
+	m := newTestMessenger(protocol.DefaultPort, "me at host (Linux)")
+	src := netip.MustParseAddr("10.0.0.8")
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := protocol.SignBuddyMessage(
+		protocol.BuddyMessage{Type: protocol.MsgHelloPortKeyBroadcast, Port: 4644, Signature: "bob at phone (Android)"},
+		pub, priv,
+	)
+	wire := msg.Serialize()
+	// Flip a bit inside the signature payload (last byte of sig field). The
+	// Ed25519 signature is at offset 1 + 2 + 32 = 35; the field is 64 bytes.
+	wire[35+63] ^= 0x01
+
+	m.handleDatagram(wire, src)
+	assertNoEvent(t, m)
+	// And no v2 record should have been written.
+	if m.lookupV2Key(src) != nil {
+		t.Fatal("rejected datagrams should not register a v2 key")
+	}
 }

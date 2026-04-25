@@ -89,6 +89,12 @@
               <div class="name">
                 {peerLabel(p)}
                 {#if trusted}<span class="trust-badge" title="In allow-list">✓</span>{/if}
+                {#if p.v2Capable}
+                  <span
+                    class="enc-badge"
+                    title={p.fingerprint ? `Supports encrypted transfers · ${p.fingerprint}` : 'Supports encrypted transfers'}
+                  >🔓</span>
+                {/if}
               </div>
               <div class="detail">{ps.host || p.address} · {ps.platform || '–'}</div>
             </div>
@@ -218,6 +224,12 @@
     margin-left: 4px;
     color: var(--accent-strong);
     font-weight: 700;
+  }
+  .enc-badge {
+    display: inline-block;
+    margin-left: 4px;
+    font-size: 0.85rem;
+    cursor: help;
   }
   .peer-progress {
     position: absolute;

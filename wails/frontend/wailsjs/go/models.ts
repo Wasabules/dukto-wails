@@ -66,6 +66,8 @@ export namespace main {
 	    address: string;
 	    port: number;
 	    signature: string;
+	    v2Capable: boolean;
+	    fingerprint?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new PeerView(source);
@@ -76,6 +78,8 @@ export namespace main {
 	        this.address = source["address"];
 	        this.port = source["port"];
 	        this.signature = source["signature"];
+	        this.v2Capable = source["v2Capable"];
+	        this.fingerprint = source["fingerprint"];
 	    }
 	}
 

@@ -32,6 +32,8 @@ func (a *App) startup(ctx context.Context) {
 		Port:          protocol.DefaultPort,
 		SignatureFunc: a.currentSignature,
 		HelloCooldown: time.Duration(a.settings.Values().UDPHelloCooldownSeconds) * time.Second,
+		IdentityPub:   a.identity.Public,
+		IdentityPriv:  a.identity.Private,
 	})
 	if err := a.messenger.Start(ctx); err != nil {
 		log.Printf("dukto: discovery start: %v", err)
@@ -196,11 +198,7 @@ func (a *App) startTCPServer(ctx context.Context) error {
 func (a *App) pumpDiscoveryEvents() {
 	defer close(a.eventsStop)
 	for ev := range a.messenger.Events() {
-		view := PeerView{
-			Address:   ev.Peer.Addr.String(),
-			Port:      ev.Peer.Port,
-			Signature: ev.Peer.Signature,
-		}
+		view := peerView(ev.Peer)
 		switch ev.Kind {
 		case discovery.EventFound:
 			runtime.EventsEmit(a.ctx, evtPeerFound, view)
