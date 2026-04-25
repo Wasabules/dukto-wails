@@ -231,6 +231,59 @@ jobs:
         shell: bash
         run: cmake --build build --config Release --parallel
 
+      - name: Bundle Qt (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/deploy
+          cp build/Release/dukto.exe build/deploy/
+          windeployqt --release --no-translations --qmldir qml/new build/deploy/dukto.exe
+
+      - name: Bundle Qt (macOS)
+        if: runner.os == 'macOS'
+        run: macdeployqt build/dukto.app -qmldir=qml/new
+
+      - name: Bundle Qt (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          # GHA runners don't expose FUSE; force AppImages to extract+run.
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          set -euo pipefail
+          LD_DIR="$RUNNER_TEMP/linuxdeploy"
+          mkdir -p "$LD_DIR"
+          curl -fsSL -o "$LD_DIR/linuxdeploy.AppImage" \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          # linuxdeploy discovers plugins on PATH by exact name
+          # (linuxdeploy-plugin-qt, no extension).
+          curl -fsSL -o "$LD_DIR/linuxdeploy-plugin-qt" \
+            https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x "$LD_DIR"/*
+          # The repo's dukto.desktop hardcodes Exec=/usr/bin/dukto and
+          # carries the non-standard "Application" category — generate a
+          # relocatable, AppImage-friendly desktop file in build/.
+          cat > build/dukto.desktop <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Dukto
+          Comment=Easy and multi-platform file transfer tool
+          Exec=dukto
+          Icon=dukto
+          Terminal=false
+          Categories=Network;
+          EOF
+          export PATH="$LD_DIR:$PATH"
+          "$LD_DIR/linuxdeploy.AppImage" \
+            --appdir build/AppDir \
+            --executable build/dukto \
+            --desktop-file build/dukto.desktop \
+            --icon-file dukto.png \
+            --plugin qt \
+            --output appimage
+          mv Dukto-*.AppImage build/dukto-linux-amd64.AppImage
+
       - name: Package
         id: pkg
         shell: bash
@@ -242,11 +295,11 @@ jobs:
           OUT="dukto-qt6-${VERSION}-${LABEL}"
           case "$RUNNER_OS" in
             Linux)
-              tar -czf "build/${OUT}.tar.gz" -C build dukto
-              echo "path=build/${OUT}.tar.gz" >> "$GITHUB_OUTPUT"
+              mv build/dukto-linux-amd64.AppImage "build/${OUT}.AppImage"
+              echo "path=build/${OUT}.AppImage" >> "$GITHUB_OUTPUT"
               ;;
             Windows)
-              7z a -tzip "build/${OUT}.zip" ./build/Release/dukto.exe >/dev/null
+              cd build/deploy && 7z a -tzip "../${OUT}.zip" ./* >/dev/null
               echo "path=build/${OUT}.zip" >> "$GITHUB_OUTPUT"
               ;;
             macOS)
@@ -296,14 +349,46 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
 
+      - name: Bundle Qt (linuxdeploy + AppImage)
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          set -euo pipefail
+          LD_DIR="$RUNNER_TEMP/linuxdeploy"
+          mkdir -p "$LD_DIR"
+          curl -fsSL -o "$LD_DIR/linuxdeploy.AppImage" \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -fsSL -o "$LD_DIR/linuxdeploy-plugin-qt" \
+            https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x "$LD_DIR"/*
+          cat > build/dukto.desktop <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Dukto
+          Comment=Easy and multi-platform file transfer tool
+          Exec=dukto
+          Icon=dukto
+          Terminal=false
+          Categories=Network;
+          EOF
+          export PATH="$LD_DIR:$PATH"
+          "$LD_DIR/linuxdeploy.AppImage" \
+            --appdir build/AppDir \
+            --executable build/dukto \
+            --desktop-file build/dukto.desktop \
+            --icon-file dukto.png \
+            --plugin qt \
+            --output appimage
+          mv Dukto-*.AppImage build/dukto-linux-amd64.AppImage
+
       - name: Package
         id: pkg
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
-          OUT="dukto-qt5-${VERSION}-linux-amd64.tar.gz"
-          tar -czf "build/${OUT}" -C build dukto
+          OUT="dukto-qt5-${VERSION}-linux-amd64.AppImage"
+          mv build/dukto-linux-amd64.AppImage "build/${OUT}"
           echo "path=build/${OUT}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
