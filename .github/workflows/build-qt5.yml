@@ -5,11 +5,13 @@ on:
     branches: [master]
     paths-ignore:
       - "wails/**"
+      - "android-native/**"
       - "docs/**"
       - "**.md"
   pull_request:
     paths-ignore:
       - "wails/**"
+      - "android-native/**"
       - "docs/**"
       - "**.md"
   workflow_dispatch:

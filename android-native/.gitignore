@@ -1,0 +1,21 @@
+# Gradle
+.gradle/
+build/
+**/build/
+local.properties
+
+# IDE
+.idea/
+*.iml
+captures/
+
+# Build outputs
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Signing (keep templates, not real keys)
+*.jks
+*.keystore
+release/keystore.properties

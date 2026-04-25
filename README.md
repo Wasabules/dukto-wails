@@ -9,12 +9,13 @@ Dukto transfers files and text without encryption and is only designed for use i
 
 ## Repo layout
 
-This repository hosts two codebases that speak the same LAN protocol:
+This repository hosts three codebases that speak the same LAN protocol:
 
-- **Root tree (this directory)** — the original Qt6/QML app. Still the source of truth for the **Android** build.
+- **Root tree (this directory)** — the original Qt6/QML app. Currently the source of truth for the **Android** build (will be retired once `android-native/` reaches parity).
 - **`wails/`** — Wails v2 + Go + Svelte-TS rewrite of the **desktop** frontend (Windows, macOS, Linux). Has feature parity with Qt6 for transfer/discovery, plus extra security hardening. See [`wails/README.md`](wails/README.md).
+- **`android-native/`** — Kotlin + Jetpack Compose rewrite of the **Android** app (work in progress, runs side-by-side with the Qt APK on the same device). See [`android-native/README.md`](android-native/README.md).
 
-The wire format both trees implement is documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md); the port plan and coexistence rules are in [`docs/PORT_SCOPE.md`](docs/PORT_SCOPE.md).
+The wire format every tree implements is documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md); the port plan and coexistence rules are in [`docs/PORT_SCOPE.md`](docs/PORT_SCOPE.md).
 
 ## Specs at a glance
 

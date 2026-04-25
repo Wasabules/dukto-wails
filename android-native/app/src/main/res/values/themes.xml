@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Splash backdrop only — Compose paints over it as soon as the
+         activity is created. The DayNight base picks up the system
+         dark/light mode for that brief flash. -->
+    <style name="Theme.Dukto" parent="android:Theme.DeviceDefault.NoActionBar" />
+</resources>
