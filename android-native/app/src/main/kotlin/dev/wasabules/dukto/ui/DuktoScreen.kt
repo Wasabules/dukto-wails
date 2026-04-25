@@ -48,7 +48,11 @@ import androidx.compose.ui.unit.dp
 import dev.wasabules.dukto.ActivityEntry
 import dev.wasabules.dukto.InflightTransfer
 import dev.wasabules.dukto.Profile
+import dev.wasabules.dukto.audit.AuditLog
 import dev.wasabules.dukto.discovery.Peer
+import dev.wasabules.dukto.policy.PeerChoice
+import dev.wasabules.dukto.policy.PendingRequest
+import dev.wasabules.dukto.settings.Settings
 import java.text.DateFormat
 import java.util.Date
 
@@ -56,18 +60,30 @@ import java.util.Date
 @Composable
 fun DuktoScreen(
     profile: Profile,
+    settings: Settings,
     destLabel: String,
+    audit: List<AuditLog.Entry>,
     peers: List<Peer>,
     activity: List<ActivityEntry>,
     inflight: InflightTransfer?,
     pendingShare: List<Uri>,
+    pendingPeerRequests: List<PendingRequest>,
     onBuddyNameChange: (String) -> Unit,
     onPickDestFolder: () -> Unit,
     onClearDestFolder: () -> Unit,
+    onReceivingEnabledChange: (Boolean) -> Unit,
+    onConfirmUnknownPeersChange: (Boolean) -> Unit,
+    onBlockedExtensionsChange: (Set<String>) -> Unit,
+    onMaxSessionSizeChange: (Int) -> Unit,
+    onUnblockPeer: (String) -> Unit,
+    onForgetApprovals: () -> Unit,
+    onClearAudit: () -> Unit,
+    onResolvePeerRequest: (String, PeerChoice) -> Unit,
     onSendText: (Peer, String) -> Unit,
     onSendFiles: (Peer) -> Unit,
     onSendFolder: (Peer) -> Unit,
     onCancelInflight: () -> Unit,
+    onOpenActivity: (ActivityEntry) -> Unit,
 ) {
     var settingsOpen by remember { mutableStateOf(false) }
     var sendSheetPeer by remember { mutableStateOf<Peer?>(null) }
@@ -77,6 +93,14 @@ fun DuktoScreen(
             TopAppBar(
                 title = { Text("Dukto Native") },
                 actions = {
+                    if (!settings.receivingEnabled) {
+                        Text(
+                            "OFF",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(end = 8.dp),
+                        )
+                    }
                     IconButton(onClick = { settingsOpen = true }) {
                         Text("⚙", style = MaterialTheme.typography.titleLarge)
                     }
@@ -93,12 +117,8 @@ fun DuktoScreen(
                 .padding(paddingValues)
                 .padding(horizontal = 16.dp),
         ) {
-            if (pendingShare.isNotEmpty()) {
-                ShareBanner(count = pendingShare.size)
-            }
-            inflight?.let {
-                TransferBar(it, onCancel = onCancelInflight)
-            }
+            if (pendingShare.isNotEmpty()) ShareBanner(count = pendingShare.size)
+            inflight?.let { TransferBar(it, onCancel = onCancelInflight) }
 
             SectionHeader("Peers on your network")
             if (peers.isEmpty()) {
@@ -124,7 +144,7 @@ fun DuktoScreen(
                     contentPadding = PaddingValues(bottom = 16.dp),
                 ) {
                     items(activity, key = { it.at }) { entry ->
-                        ActivityRow(entry)
+                        ActivityRow(entry, onClick = { onOpenActivity(entry) })
                     }
                 }
             }
@@ -134,9 +154,18 @@ fun DuktoScreen(
             SettingsSheet(
                 profile = profile,
                 destLabel = destLabel,
+                settings = settings,
+                audit = audit,
                 onBuddyNameChange = onBuddyNameChange,
                 onPickDestFolder = onPickDestFolder,
                 onClearDestFolder = onClearDestFolder,
+                onReceivingEnabledChange = onReceivingEnabledChange,
+                onConfirmUnknownPeersChange = onConfirmUnknownPeersChange,
+                onBlockedExtensionsChange = onBlockedExtensionsChange,
+                onMaxSessionSizeChange = onMaxSessionSizeChange,
+                onUnblockPeer = onUnblockPeer,
+                onForgetApprovals = onForgetApprovals,
+                onClearAudit = onClearAudit,
                 onDismiss = { settingsOpen = false },
             )
         }
@@ -145,20 +174,16 @@ fun DuktoScreen(
             SendSheet(
                 peer = peer,
                 hasPendingShare = pendingShare.isNotEmpty(),
-                onSendText = { text ->
-                    onSendText(peer, text)
-                    sendSheetPeer = null
-                },
-                onSendFiles = {
-                    onSendFiles(peer)
-                    sendSheetPeer = null
-                },
-                onSendFolder = {
-                    onSendFolder(peer)
-                    sendSheetPeer = null
-                },
+                onSendText = { text -> onSendText(peer, text); sendSheetPeer = null },
+                onSendFiles = { onSendFiles(peer); sendSheetPeer = null },
+                onSendFolder = { onSendFolder(peer); sendSheetPeer = null },
                 onDismiss = { sendSheetPeer = null },
             )
+        }
+
+        // Stack pending-peer modals on top of everything else.
+        pendingPeerRequests.firstOrNull()?.let { req ->
+            PendingPeerDialog(request = req, onChoice = onResolvePeerRequest)
         }
     }
 }
@@ -213,7 +238,7 @@ private fun Avatar(seedText: String) {
 }
 
 @Composable
-private fun ActivityRow(entry: ActivityEntry) {
+private fun ActivityRow(entry: ActivityEntry, onClick: () -> Unit) {
     val time = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(entry.at))
     val (title, body) = when (entry) {
         is ActivityEntry.TextReceived -> "Text from ${entry.from}" to entry.text
@@ -222,8 +247,11 @@ private fun ActivityRow(entry: ActivityEntry) {
         is ActivityEntry.Sent -> "Sent ${formatBytes(entry.bytes)} to ${entry.to}" to ""
         is ActivityEntry.Error -> "Error: ${entry.peer}" to entry.message
     }
+    val tappable = entry is ActivityEntry.TextReceived || entry is ActivityEntry.FilesReceived
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .let { if (tappable) it.clickable(onClick = onClick) else it },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
@@ -359,81 +387,11 @@ private fun SendSheet(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SettingsSheet(
-    profile: Profile,
-    destLabel: String,
-    onBuddyNameChange: (String) -> Unit,
-    onPickDestFolder: () -> Unit,
-    onClearDestFolder: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var name by remember { mutableStateOf(profile.buddyName) }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-            Text("Settings", style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.height(16.dp))
-
-            // Display name
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("Display name") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Empty = use the device name. Changes take effect on the next discovery broadcast.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(20.dp))
-            HorizontalDivider()
-            Spacer(Modifier.height(20.dp))
-
-            // Destination folder
-            Text("Destination folder", style = MaterialTheme.typography.titleSmall)
-            Spacer(Modifier.height(4.dp))
-            Text(
-                destLabel,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onPickDestFolder) { Text("Pick folder") }
-                OutlinedButton(onClick = onClearDestFolder) { Text("Reset to default") }
-            }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Default: app private external storage (visible only via this app). " +
-                    "Pick a folder to make received files browsable from any file manager.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            Spacer(Modifier.height(24.dp))
-            Button(onClick = {
-                onBuddyNameChange(name)
-                onDismiss()
-            }, modifier = Modifier.fillMaxWidth()) { Text("Save") }
-            Spacer(Modifier.height(16.dp))
-        }
-    }
-}
-
 private fun formatBytes(b: Long): String {
     if (b < 0L) return "?"
     val units = listOf("B", "KB", "MB", "GB")
     var v = b.toDouble()
     var unit = 0
-    while (v >= 1024.0 && unit < units.lastIndex) {
-        v /= 1024.0; unit++
-    }
+    while (v >= 1024.0 && unit < units.lastIndex) { v /= 1024.0; unit++ }
     return if (unit == 0) "$b B" else "%.1f %s".format(v, units[unit])
 }

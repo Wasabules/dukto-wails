@@ -8,12 +8,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Tiny persistent settings layer.
+ * Persistent settings.
  *
- * SharedPreferences is overkill-resistant enough for the handful of values we
- * need (display name, persisted SAF dest tree URI). DataStore Preferences would
- * be the current best practice but adds a transitive Coroutines/IO dep with
- * no real win at this scope.
+ * Mirrors the Wails desktop's settings surface for the bits that make sense on
+ * a mobile peer. The whitelist / per-interface allow-list / interface-bound
+ * cooldowns are intentionally absent — Android peers usually have a single
+ * Wi-Fi interface so the value of those gates is much lower.
  */
 class SettingsStore(context: Context) {
 
@@ -29,28 +29,75 @@ class SettingsStore(context: Context) {
         prefs.edit {
             putString(KEY_BUDDY_NAME, next.buddyName)
             if (next.destTreeUri == null) remove(KEY_DEST_TREE) else putString(KEY_DEST_TREE, next.destTreeUri)
+
+            putBoolean(KEY_RECEIVING_ENABLED, next.receivingEnabled)
+            putBoolean(KEY_CONFIRM_UNKNOWN, next.confirmUnknownPeers)
+            putString(KEY_BLOCKED_PEERS, next.blockedPeers.joinToString("\n"))
+            putString(KEY_APPROVED_PEERS, next.approvedPeers.joinToString("\n"))
+            putString(KEY_BLOCKED_EXT, next.blockedExtensions.joinToString(","))
+            putInt(KEY_MAX_SIZE_MB, next.maxSessionSizeMB)
         }
         _state.value = next
     }
 
+    /** Convenience: bulk-replace the recent activity log (persisted as JSON). */
+    fun saveActivityJson(json: String) {
+        prefs.edit { putString(KEY_ACTIVITY_JSON, json) }
+    }
+
+    fun loadActivityJson(): String? = prefs.getString(KEY_ACTIVITY_JSON, null)
+
     private fun load(): Settings = Settings(
         buddyName = prefs.getString(KEY_BUDDY_NAME, "").orEmpty(),
         destTreeUri = prefs.getString(KEY_DEST_TREE, null),
+        receivingEnabled = prefs.getBoolean(KEY_RECEIVING_ENABLED, true),
+        confirmUnknownPeers = prefs.getBoolean(KEY_CONFIRM_UNKNOWN, false),
+        blockedPeers = prefs.getString(KEY_BLOCKED_PEERS, "")
+            ?.lines()?.filter { it.isNotBlank() }.orEmpty().toSet(),
+        approvedPeers = prefs.getString(KEY_APPROVED_PEERS, "")
+            ?.lines()?.filter { it.isNotBlank() }.orEmpty().toSet(),
+        blockedExtensions = prefs.getString(KEY_BLOCKED_EXT, DEFAULT_BLOCKED_EXT)
+            ?.split(',')?.map { it.trim().lowercase() }?.filter { it.isNotEmpty() }.orEmpty().toSet(),
+        maxSessionSizeMB = prefs.getInt(KEY_MAX_SIZE_MB, 0),
     )
 
     private companion object {
         const val KEY_BUDDY_NAME = "buddy_name"
         const val KEY_DEST_TREE = "dest_tree_uri"
+        const val KEY_RECEIVING_ENABLED = "receiving_enabled"
+        const val KEY_CONFIRM_UNKNOWN = "confirm_unknown_peers"
+        const val KEY_BLOCKED_PEERS = "blocked_peers"
+        const val KEY_APPROVED_PEERS = "approved_peers"
+        const val KEY_BLOCKED_EXT = "blocked_extensions"
+        const val KEY_MAX_SIZE_MB = "max_session_size_mb"
+        const val KEY_ACTIVITY_JSON = "activity_json"
+
+        // Mirrors the Wails default; conservative against Windows-only nasties.
+        const val DEFAULT_BLOCKED_EXT = "exe,bat,cmd,com,scr,msi,ps1,vbs,jse,lnk"
     }
 }
 
 /**
  * @property destTreeUri serialized [android.net.Uri] of an
- * `ACTION_OPEN_DOCUMENT_TREE` result that the user has granted persistent
- * access to. Null means "use the app's private external Downloads dir as a
- * fallback".
+ * `ACTION_OPEN_DOCUMENT_TREE` result the user has granted persistent access to.
+ *   Null = use the app's private external Downloads dir as fallback.
+ * @property receivingEnabled master switch — when false, Server hangs up on
+ *   incoming sessions before reading any data.
+ * @property confirmUnknownPeers when true, a session from a signature not in
+ *   [approvedPeers] pops a 60-second modal asking the user whether to allow.
+ * @property blockedPeers signatures that are hard-rejected (no modal).
+ * @property approvedPeers signatures the user has approved (skips the modal).
+ * @property blockedExtensions case-insensitive file extensions (without the dot)
+ *   that abort the session if any element matches.
+ * @property maxSessionSizeMB rejects sessions larger than this; 0 = no cap.
  */
 data class Settings(
     val buddyName: String = "",
     val destTreeUri: String? = null,
+    val receivingEnabled: Boolean = true,
+    val confirmUnknownPeers: Boolean = false,
+    val blockedPeers: Set<String> = emptySet(),
+    val approvedPeers: Set<String> = emptySet(),
+    val blockedExtensions: Set<String> = emptySet(),
+    val maxSessionSizeMB: Int = 0,
 )

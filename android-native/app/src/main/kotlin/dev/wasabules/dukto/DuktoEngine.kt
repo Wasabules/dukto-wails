@@ -2,12 +2,17 @@ package dev.wasabules.dukto
 
 import android.content.Context
 import android.net.Uri
+import dev.wasabules.dukto.audit.AuditLog
 import dev.wasabules.dukto.avatar.AvatarServer
 import dev.wasabules.dukto.discovery.Messenger
 import dev.wasabules.dukto.discovery.Peer as DiscoveryPeer
 import dev.wasabules.dukto.platform.currentSignature
+import dev.wasabules.dukto.policy.PeerChoice
+import dev.wasabules.dukto.policy.PendingRequest
+import dev.wasabules.dukto.policy.SessionPolicy
 import dev.wasabules.dukto.protocol.AVATAR_PORT_OFFSET
 import dev.wasabules.dukto.protocol.DEFAULT_PORT
+import dev.wasabules.dukto.settings.Settings
 import dev.wasabules.dukto.settings.SettingsStore
 import dev.wasabules.dukto.transfer.Peer as TransferPeer
 import dev.wasabules.dukto.transfer.Sender
@@ -20,51 +25,45 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 import java.net.InetAddress
 
-/**
- * Process-wide orchestration: settings store + UDP discovery + TCP server +
- * sender + avatar HTTP, plus the persistent UI state (signature, recent
- * transfers, in-flight progress).
- *
- * Held by [DuktoApp] so it survives configuration changes and Activity
- * recreation. The foreground [dev.wasabules.dukto.transfer.TransferService]
- * is what actually anchors the lifecycle while a transfer is in flight.
- */
 class DuktoEngine(private val app: Context) {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     val settings = SettingsStore(app)
+    val audit = AuditLog(app)
+    val policy = SessionPolicy(settings, audit)
 
-    /** Surfaced to the UI for the bottom sheet. */
     val profile: StateFlow<Profile> = run {
         val flow = MutableStateFlow(Profile(buddyName = settings.state.value.buddyName))
-        scope.launch {
-            settings.state.collect { s -> flow.value = Profile(s.buddyName) }
-        }
+        scope.launch { settings.state.collect { s -> flow.value = Profile(s.buddyName) } }
         flow.asStateFlow()
     }
+    val settingsFlow: StateFlow<Settings> = settings.state
 
-    private val _activity = MutableStateFlow<List<ActivityEntry>>(emptyList())
+    private val _activity = MutableStateFlow(loadActivity())
     val activity: StateFlow<List<ActivityEntry>> = _activity.asStateFlow()
 
     private val _inflight = MutableStateFlow<InflightTransfer?>(null)
     val inflight: StateFlow<InflightTransfer?> = _inflight.asStateFlow()
 
-    /** UI-friendly mirror of the SAF tree URI. */
-    val destLabel: StateFlow<String> = settings.state.map { s ->
-        s.destTreeUri ?: "App private storage (default)"
-    }.let { flow ->
-        // map returns a Flow; promote to a StateFlow via a launching coroutine.
+    val destLabel: StateFlow<String> = run {
         val out = MutableStateFlow(settings.state.value.destTreeUri ?: "App private storage (default)")
-        scope.launch { flow.collect { out.value = it } }
+        scope.launch {
+            settings.state.collect { s ->
+                out.value = s.destTreeUri ?: "App private storage (default)"
+            }
+        }
         out.asStateFlow()
     }
+
+    val pendingPeerRequests: StateFlow<List<PendingRequest>> = policy.pending
 
     val messenger: Messenger = Messenger(
         context = app,
@@ -75,6 +74,14 @@ class DuktoEngine(private val app: Context) {
     private val server = Server(
         context = app,
         destTreeUriProvider = { settings.state.value.destTreeUri },
+        policy = policy,
+        signatureLookup = { addr ->
+            // Server hands us the InetAddress that just connected; cross-reference
+            // with the discovery peer table (keyed by IP) to recover the buddy
+            // signature the policy needs for block/approve decisions.
+            messenger.peers.value.values
+                .firstOrNull { it.address == addr }?.signature
+        },
     )
     private val sender = Sender(context = app)
 
@@ -105,13 +112,31 @@ class DuktoEngine(private val app: Context) {
 
     fun setBuddyName(name: String) {
         settings.update { it.copy(buddyName = name) }
-        // Rebroadcast so peers learn the new name immediately.
         messenger.sayHello()
     }
 
-    fun setDestTreeUri(uri: String?) {
-        settings.update { it.copy(destTreeUri = uri) }
+    fun setDestTreeUri(uri: String?) = settings.update { it.copy(destTreeUri = uri) }
+
+    fun setReceivingEnabled(value: Boolean) = settings.update { it.copy(receivingEnabled = value) }
+    fun setConfirmUnknownPeers(value: Boolean) = settings.update { it.copy(confirmUnknownPeers = value) }
+    fun setBlockedExtensions(set: Set<String>) =
+        settings.update { it.copy(blockedExtensions = set.map { e -> e.lowercase().trim() }.filter { e -> e.isNotEmpty() }.toSet()) }
+    fun setMaxSessionSizeMB(mb: Int) = settings.update { it.copy(maxSessionSizeMB = mb.coerceAtLeast(0)) }
+
+    fun blockPeer(signature: String) = settings.update {
+        it.copy(blockedPeers = it.blockedPeers + signature, approvedPeers = it.approvedPeers - signature)
     }
+    fun unblockPeer(signature: String) = settings.update { it.copy(blockedPeers = it.blockedPeers - signature) }
+    fun forgetApprovals() = settings.update { it.copy(approvedPeers = emptySet()) }
+
+    fun resolvePeerRequest(id: String, choice: PeerChoice) = policy.resolve(id, choice)
+
+    fun clearActivity() {
+        _activity.value = emptyList()
+        persistActivity()
+    }
+
+    fun clearAuditLog() = audit.clear()
 
     fun sendText(toAddress: String, port: Int, text: String) {
         sender.sendText(TransferPeer(InetAddress.getByName(toAddress), port), text)
@@ -126,8 +151,6 @@ class DuktoEngine(private val app: Context) {
     }
 
     fun cancelInflight() {
-        // Either side could be active — signal both, only the matching one
-        // has work to abort.
         server.cancelActiveReceive()
         sender.cancelActiveSend()
     }
@@ -146,9 +169,7 @@ class DuktoEngine(private val app: Context) {
                 pushNotif(ev)
             }
             is TransferEvent.Progress -> {
-                _inflight.update {
-                    it?.copy(bytesDone = ev.bytesDone, totalBytes = ev.totalBytes)
-                }
+                _inflight.update { it?.copy(bytesDone = ev.bytesDone, totalBytes = ev.totalBytes) }
                 pushNotifProgress(ev)
             }
             is TransferEvent.TextReceived -> {
@@ -168,6 +189,7 @@ class DuktoEngine(private val app: Context) {
                         from = ev.from.hostAddress.orEmpty(),
                         location = ev.rootDescription,
                         fileCount = ev.fileCount,
+                        fileUris = ev.fileUris,
                         at = System.currentTimeMillis(),
                     ),
                 )
@@ -197,6 +219,24 @@ class DuktoEngine(private val app: Context) {
 
     private fun appendActivity(entry: ActivityEntry) {
         _activity.update { (listOf(entry) + it).take(64) }
+        persistActivity()
+    }
+
+    private fun persistActivity() {
+        val arr = JSONArray()
+        for (e in _activity.value) arr.put(e.toJson())
+        settings.saveActivityJson(arr.toString())
+    }
+
+    private fun loadActivity(): List<ActivityEntry> {
+        val raw = settings.loadActivityJson() ?: return emptyList()
+        val arr = runCatching { JSONArray(raw) }.getOrNull() ?: return emptyList()
+        val out = mutableListOf<ActivityEntry>()
+        for (i in 0 until arr.length()) {
+            val obj = arr.optJSONObject(i) ?: continue
+            ActivityEntry.fromJson(obj)?.let { out += it }
+        }
+        return out
     }
 
     private fun clearInflight() {
@@ -238,9 +278,44 @@ sealed interface ActivityEntry {
     val at: Long
 
     data class TextReceived(val from: String, val text: String, override val at: Long) : ActivityEntry
-    data class FilesReceived(val from: String, val location: String, val fileCount: Int, override val at: Long) : ActivityEntry
+    data class FilesReceived(
+        val from: String,
+        val location: String,
+        val fileCount: Int,
+        val fileUris: List<String>,
+        override val at: Long,
+    ) : ActivityEntry
     data class Sent(val to: String, val bytes: Long, override val at: Long) : ActivityEntry
     data class Error(val peer: String, val message: String, override val at: Long) : ActivityEntry
+
+    fun toJson(): JSONObject = when (this) {
+        is TextReceived -> JSONObject().put("kind", "text").put("from", from).put("text", text).put("at", at)
+        is FilesReceived -> JSONObject().put("kind", "files").put("from", from).put("location", location)
+            .put("fileCount", fileCount).put("at", at)
+            .put("fileUris", JSONArray().apply { fileUris.forEach { put(it) } })
+        is Sent -> JSONObject().put("kind", "sent").put("to", to).put("bytes", bytes).put("at", at)
+        is Error -> JSONObject().put("kind", "error").put("peer", peer).put("message", message).put("at", at)
+    }
+
+    companion object {
+        fun fromJson(o: JSONObject): ActivityEntry? = when (o.optString("kind")) {
+            "text" -> TextReceived(o.optString("from"), o.optString("text"), o.optLong("at"))
+            "files" -> {
+                val urisJson = o.optJSONArray("fileUris") ?: JSONArray()
+                val uris = (0 until urisJson.length()).map { urisJson.getString(it) }
+                FilesReceived(
+                    from = o.optString("from"),
+                    location = o.optString("location"),
+                    fileCount = o.optInt("fileCount"),
+                    fileUris = uris,
+                    at = o.optLong("at"),
+                )
+            }
+            "sent" -> Sent(o.optString("to"), o.optLong("bytes"), o.optLong("at"))
+            "error" -> Error(o.optString("peer"), o.optString("message"), o.optLong("at"))
+            else -> null
+        }
+    }
 }
 
 fun DiscoveryPeer.toTransferPeer(): TransferPeer = TransferPeer(address, port)

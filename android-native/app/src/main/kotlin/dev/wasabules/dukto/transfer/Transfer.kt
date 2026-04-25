@@ -6,6 +6,8 @@ import android.os.Environment
 import android.util.Log
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
+import dev.wasabules.dukto.policy.Decision
+import dev.wasabules.dukto.policy.SessionPolicy
 import dev.wasabules.dukto.protocol.DEFAULT_PORT
 import dev.wasabules.dukto.protocol.DIRECTORY_SIZE_MARKER
 import dev.wasabules.dukto.protocol.ElementHeader
@@ -55,7 +57,17 @@ sealed interface TransferEvent {
         val isReceive: Boolean,
     ) : TransferEvent
     data class TextReceived(val from: InetAddress, val text: String) : TransferEvent
-    data class FilesReceived(val from: InetAddress, val rootDescription: String, val fileCount: Int) : TransferEvent
+    data class FilesReceived(
+        val from: InetAddress,
+        val rootDescription: String,
+        val fileCount: Int,
+        /**
+         * URIs of received files (DocumentFile content URIs when using SAF,
+         * file:// URIs otherwise). Used by the UI to render thumbnails and
+         * to launch previews via ACTION_VIEW.
+         */
+        val fileUris: List<String>,
+    ) : TransferEvent
     data class Failed(val from: InetAddress?, val reason: String, val isReceive: Boolean) : TransferEvent
     data class Sent(val to: Peer, val totalSize: Long) : TransferEvent
 }
@@ -89,6 +101,8 @@ class Server(
     private val context: Context,
     private val port: Int = DEFAULT_PORT,
     private val destTreeUriProvider: () -> String? = { null },
+    private val policy: SessionPolicy? = null,
+    private val signatureLookup: (InetAddress) -> String? = { null },
 ) {
     private val scope = CoroutineScope(Dispatchers.IO)
     private val _events = MutableSharedFlow<TransferEvent>(extraBufferCapacity = 64)
@@ -137,13 +151,39 @@ class Server(
         val from = client.inetAddress
         activeReceive.compareAndSet(null, client)
         try {
+            // Pre-session gate: master switch + block list + confirm-unknown.
+            policy?.let { p ->
+                val pre = p.preSession(from) { signatureLookup(from) }
+                if (pre is Decision.Reject) {
+                    _events.emit(TransferEvent.Failed(from, pre.reason, isReceive = true))
+                    runCatching { client.close() }
+                    return@withContext
+                }
+            }
+
             client.use { sock ->
                 val input = BufferedInputStream(sock.getInputStream())
                 val header = readSessionHeader(input)
+                // Stage 4: session size cap.
+                policy?.checkSessionSize(from, header.totalSize)?.let {
+                    if (it is Decision.Reject) {
+                        _events.emit(TransferEvent.Failed(from, it.reason, isReceive = true))
+                        return@use
+                    }
+                }
                 _events.emit(TransferEvent.Started(from, header.totalElements, header.totalSize, isReceive = true))
 
                 if (header.totalElements == 1L) {
                     val first = readElementHeader(input)
+                    // Stage 5: extension check (single-element fast path).
+                    if (!first.isText) {
+                        policy?.checkElement(from, first.name)?.let {
+                            if (it is Decision.Reject) {
+                                _events.emit(TransferEvent.Failed(from, it.reason, isReceive = true))
+                                return@use
+                            }
+                        }
+                    }
                     if (first.isText) {
                         receiveText(input, from, first.size)
                         return@use
@@ -192,6 +232,12 @@ class Server(
                 if (el.size == DIRECTORY_SIZE_MARKER) {
                     sink.mkdirs(el.name)
                 } else {
+                    // Stage 5: extension check, per element.
+                    policy?.checkElement(from, el.name)?.let {
+                        if (it is Decision.Reject) {
+                            throw IllegalStateException(it.reason)
+                        }
+                    }
                     sink.writeFile(el.name, el.size) { stream ->
                         copyBytes(input, stream, el.size) { delta ->
                             val total = (bytesSoFar + delta).coerceAtMost(header.totalSize)
@@ -205,7 +251,7 @@ class Server(
         } finally {
             sink.close()
         }
-        _events.emit(TransferEvent.FilesReceived(from, sink.description, fileCount))
+        _events.emit(TransferEvent.FilesReceived(from, sink.description, fileCount, sink.uris.toList()))
     }
 
     // ── sinks: SAF tree if configured, else app-private external storage ──
@@ -245,6 +291,9 @@ private interface ReceiveSink {
     /** Human-readable destination (path or tree URI) for activity logs. */
     val description: String
 
+    /** URIs of files written so far — used by the UI to render previews. */
+    val uris: List<String>
+
     /** Create directories along [relPath] (relative, '/' separators). Idempotent. */
     fun mkdirs(relPath: String)
 
@@ -257,6 +306,8 @@ private interface ReceiveSink {
 /** Direct-on-disk sink under the app's private external storage. */
 private class FileSink(private val root: File) : ReceiveSink {
     override val description: String = root.absolutePath
+    private val _uris = mutableListOf<String>()
+    override val uris: List<String> get() = _uris
 
     override fun mkdirs(relPath: String) {
         target(relPath).also { it.mkdirs() }
@@ -266,6 +317,7 @@ private class FileSink(private val root: File) : ReceiveSink {
         val file = target(relPath)
         file.parentFile?.mkdirs()
         BufferedOutputStream(FileOutputStream(file)).use(body)
+        _uris += android.net.Uri.fromFile(file).toString()
     }
 
     override fun close() {}
@@ -290,6 +342,8 @@ private class DocumentSink(
 ) : ReceiveSink {
     /** Cache directories so lookups don't pay an O(N) findFile each time. */
     private val dirCache = mutableMapOf<String, DocumentFile>("" to sessionDoc)
+    private val _uris = mutableListOf<String>()
+    override val uris: List<String> get() = _uris
 
     override fun mkdirs(relPath: String) {
         ensureDir(relPath)
@@ -308,6 +362,7 @@ private class DocumentSink(
         val out = context.contentResolver.openOutputStream(file.uri, "w")
             ?: throw IllegalStateException("cannot open ${file.uri} for write")
         BufferedOutputStream(out).use(body)
+        _uris += file.uri.toString()
     }
 
     override fun close() {}

@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import dev.wasabules.dukto.discovery.Peer
 import dev.wasabules.dukto.ui.DuktoScreen
+import dev.wasabules.dukto.ui.PreviewScreen
 import dev.wasabules.dukto.ui.theme.DuktoTheme
 
 class MainActivity : ComponentActivity() {
@@ -26,7 +27,6 @@ class MainActivity : ComponentActivity() {
     private val app: DuktoApp get() = application as DuktoApp
     private val engine: DuktoEngine get() = app.engine
 
-    /** Peer queued by the most recent action that needs an external picker result. */
     private var pendingPeer: Peer? = null
 
     private val pickFiles = registerForActivityResult(
@@ -53,7 +53,6 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.OpenDocumentTree(),
     ) { uri: Uri? ->
         if (uri != null) {
-            // Persist read+write so we can write to it after process death.
             val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             runCatching { contentResolver.takePersistableUriPermission(uri, flags) }
             engine.setDestTreeUri(uri.toString())
@@ -62,7 +61,7 @@ class MainActivity : ComponentActivity() {
 
     private val askNotificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { /* the OS retains the answer; nothing to do here */ }
+    ) { /* OS retains the answer */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -72,43 +71,65 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             DuktoTheme {
+                val settingsState by engine.settingsFlow.collectAsState()
+                val auditEntries by engine.audit.entries.collectAsState()
                 val peers by engine.peers.collectAsState()
                 val activity by engine.activity.collectAsState()
                 val inflight by engine.inflight.collectAsState()
                 val profile by engine.profile.collectAsState()
                 val destLabel by engine.destLabel.collectAsState()
+                val pendingRequests by engine.pendingPeerRequests.collectAsState()
 
                 var pendingShare by remember { mutableStateOf<List<Uri>>(emptyList()) }
                 LaunchedEffect(Unit) { pendingShare = consumeSharedUris() }
 
-                DuktoScreen(
-                    profile = profile,
-                    destLabel = destLabel,
-                    peers = peers.values.toList(),
-                    activity = activity,
-                    inflight = inflight,
-                    pendingShare = pendingShare,
-                    onBuddyNameChange = engine::setBuddyName,
-                    onPickDestFolder = { pickDestTree.launch(null) },
-                    onClearDestFolder = { engine.setDestTreeUri(null) },
-                    onSendText = { peer, text ->
-                        engine.sendText(peer.address.hostAddress.orEmpty(), peer.port, text)
-                    },
-                    onSendFiles = { peer ->
-                        if (pendingShare.isNotEmpty()) {
-                            engine.sendFiles(peer.address.hostAddress.orEmpty(), peer.port, pendingShare)
-                            pendingShare = emptyList()
-                        } else {
+                // Activity entry currently being previewed (back press / topbar arrow returns null).
+                var preview by remember { mutableStateOf<ActivityEntry?>(null) }
+
+                if (preview != null) {
+                    PreviewScreen(entry = preview!!, onClose = { preview = null })
+                } else {
+                    DuktoScreen(
+                        profile = profile,
+                        settings = settingsState,
+                        destLabel = destLabel,
+                        audit = auditEntries,
+                        peers = peers.values.toList(),
+                        activity = activity,
+                        inflight = inflight,
+                        pendingShare = pendingShare,
+                        pendingPeerRequests = pendingRequests,
+                        onBuddyNameChange = engine::setBuddyName,
+                        onPickDestFolder = { pickDestTree.launch(null) },
+                        onClearDestFolder = { engine.setDestTreeUri(null) },
+                        onReceivingEnabledChange = engine::setReceivingEnabled,
+                        onConfirmUnknownPeersChange = engine::setConfirmUnknownPeers,
+                        onBlockedExtensionsChange = engine::setBlockedExtensions,
+                        onMaxSessionSizeChange = engine::setMaxSessionSizeMB,
+                        onUnblockPeer = engine::unblockPeer,
+                        onForgetApprovals = engine::forgetApprovals,
+                        onClearAudit = engine::clearAuditLog,
+                        onResolvePeerRequest = engine::resolvePeerRequest,
+                        onSendText = { peer, text ->
+                            engine.sendText(peer.address.hostAddress.orEmpty(), peer.port, text)
+                        },
+                        onSendFiles = { peer ->
+                            if (pendingShare.isNotEmpty()) {
+                                engine.sendFiles(peer.address.hostAddress.orEmpty(), peer.port, pendingShare)
+                                pendingShare = emptyList()
+                            } else {
+                                pendingPeer = peer
+                                pickFiles.launch(arrayOf("*/*"))
+                            }
+                        },
+                        onSendFolder = { peer ->
                             pendingPeer = peer
-                            pickFiles.launch(arrayOf("*/*"))
-                        }
-                    },
-                    onSendFolder = { peer ->
-                        pendingPeer = peer
-                        pickFolderToSend.launch(null)
-                    },
-                    onCancelInflight = { engine.cancelInflight() },
-                )
+                            pickFolderToSend.launch(null)
+                        },
+                        onCancelInflight = { engine.cancelInflight() },
+                        onOpenActivity = { entry -> preview = entry },
+                    )
+                }
             }
         }
     }
