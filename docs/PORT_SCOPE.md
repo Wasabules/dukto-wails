@@ -95,10 +95,15 @@ Defense-in-depth order on the receive path is: master switch → block list → 
 
 ## Scope of the Qt6 codebase after the port
 
-Once the Wails desktop app reaches the users currently on the Qt6 desktop builds, this Qt6 repo becomes **Android-only**. Everything desktop-specific can be deleted:
+Two transitions are now in flight:
+
+1. **Wails replaces Qt for the desktop.** Once the Wails app reaches the users currently on the Qt6 desktop builds, the desktop-only pieces below can be deleted from the root tree.
+2. **`android-native/` (Kotlin + Compose) replaces Qt for Android.** Once the native APK has been used in the wild for a release cycle, the entire Qt-Android tooling (the Android `qml/new/` UI, JNI helpers, the Android branches of `platform.cpp`, the Qt-Android workflows) can also be removed — at which point this Qt repo no longer ships anything user-facing and can be archived.
+
+### Desktop-only (delete after Wails takes over)
 
 - `ecwin7.*` (Windows taskbar).
-- `platform.cpp` branches for `Q_OS_WIN`, `Q_OS_MAC`, `Q_OS_LINUX` non-Android — keep only the `Q_OS_ANDROID` paths.
+- `platform.cpp` branches for `Q_OS_WIN`, `Q_OS_MAC`, `Q_OS_LINUX` non-Android — keep only the `Q_OS_ANDROID` paths until step 2 fires.
 - `systemtray.*` — desktop-only, gated by `DESKTOP_APP`.
 - `modules/SingleApplication` submodule — desktop-only.
 - Linux DBus integration, macOS bundle/icon setup, Windows `.rc`/`.ico`.
@@ -106,7 +111,17 @@ Once the Wails desktop app reaches the users currently on the Qt6 desktop builds
 - `dukto.desktop`, `.png` icon install rules, macOS `.icns`.
 - CMake `USE_SINGLE_APP`, `USE_NOTIFY_LIBNOTIFY`, `USE_UPDATER` options.
 
-**Don't touch yet.** Do this cleanup in one go only after the Wails app has replaced the Qt6 desktop builds for real users, so bisecting desktop regressions against the old Qt build is still possible during the transition.
+### Android-only (delete after the native APK takes over)
+
+- `qml/new/` and `qml/common/` (the entire Quick Controls UI).
+- `androidutils.{h,cpp}` (JNI helpers).
+- `android/qt5/` and `android/qt6/` Gradle / manifest scaffolding bundled with Qt-Android.
+- `Q_OS_ANDROID` branches in `platform.cpp`.
+- `network/` and `*` desktop-shared classes IF nothing else still depends on them at that point — Wails has its own Go reimplementation, so the C++ network code's only consumer is the Qt UI.
+- `dukto.pro`, `CMakeLists.txt` (in their entirety once neither desktop nor Android builds use them).
+- Workflows: `build-android.yml`, `build-qt5.yml`, `build-qt6.yml`, and the `qt5` / `qt6` / `android` jobs in `release.yml`.
+
+**Don't touch yet.** Do each cleanup in one go only after the corresponding rewrite has replaced the Qt build for real users, so bisecting regressions against the old Qt build is still possible during the transition.
 
 ## Interop constraints (non-negotiable)
 

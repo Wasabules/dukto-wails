@@ -53,6 +53,12 @@
   export let onBuddyNameChange: (v: string) => void = () => {};
   export let onCommitBuddyName: () => void = () => {};
   export let onPickDest: () => void = () => {};
+  export let avatarUrl: string = '';
+  export let hasCustomAvatar: boolean = false;
+  export let onPickAvatar: () => void = () => {};
+  export let onClearAvatar: () => void = () => {};
+  export let themeMode: 'system' | 'light' | 'dark' = 'system';
+  export let onThemeModeChange: (mode: 'system' | 'light' | 'dark') => void = () => {};
   export let onToggleNotifications: (on: boolean) => void = () => {};
   export let onToggleTray: (on: boolean) => void = () => {};
 
@@ -157,9 +163,15 @@
           {notificationsOn}
           {trayOn}
           {qrData}
+          {avatarUrl}
+          {hasCustomAvatar}
+          {themeMode}
           {onBuddyNameChange}
           {onCommitBuddyName}
           {onPickDest}
+          {onPickAvatar}
+          {onClearAvatar}
+          {onThemeModeChange}
           {onToggleNotifications}
           {onToggleTray}
         />
@@ -239,7 +251,7 @@
     padding: 24px;
   }
   .settings-modal {
-    background: #fff;
+    background: var(--panel-bg);
     border-radius: 8px;
     box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
     width: min(640px, 100%);
@@ -253,7 +265,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 12px 16px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--panel-border);
   }
   .settings-head h2 {
     margin: 0;
@@ -263,13 +275,13 @@
     display: flex;
     gap: 2px;
     padding: 0 16px;
-    border-bottom: 1px solid #e2e8f0;
-    background: #f8fafc;
+    border-bottom: 1px solid var(--panel-border);
+    background: var(--panel-bg-2);
     flex-wrap: wrap;
   }
   .settings-tabs .tab {
     background: transparent;
-    color: #475569;
+    color: var(--text);
     border: 0;
     border-bottom: 2px solid transparent;
     border-radius: 0;
@@ -278,13 +290,13 @@
     cursor: pointer;
   }
   .settings-tabs .tab:hover {
-    color: #0f172a;
-    background: #eef2ff;
+    color: var(--text-strong);
+    background: var(--accent-soft);
   }
   .settings-tabs .tab.active {
-    color: #2563eb;
-    border-bottom-color: #2563eb;
-    background: #fff;
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    background: var(--panel-bg);
   }
   .settings-body {
     padding: 16px 20px;
@@ -296,12 +308,12 @@
     line-height: 1;
     border-radius: 4px;
     cursor: pointer;
-    border: 1px solid #2563eb;
-    background: #2563eb;
-    color: #fff;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: var(--accent-on);
   }
   .mini.ghost {
     background: transparent;
-    color: #2563eb;
+    color: var(--accent);
   }
 </style>

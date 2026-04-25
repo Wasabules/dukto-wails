@@ -1,57 +1,51 @@
-# Dukto — Native Android port (work in progress)
+# Dukto — Native Android port
 
 Parallel rewrite of the Android app in **Kotlin + Jetpack Compose**, sharing nothing with the Qt6 build at the repo root. Both APKs install side-by-side on the same device:
 
-| Build           | `applicationId`                | Source       |
-|-----------------|--------------------------------|--------------|
-| Qt6 / QML       | `com.github.xuzhen.dukto`      | repo root    |
+| Build           | `applicationId`                | Source            |
+|-----------------|--------------------------------|-------------------|
+| Qt6 / QML       | `com.github.xuzhen.dukto`      | repo root         |
 | Native (this)   | `dev.wasabules.dukto`          | `android-native/` |
 
-The Qt build keeps shipping until this port reaches feature parity. Goal once it does: delete the entire Qt tree (it's already off the desktop, and the desktop now ships from `wails/`).
+The Qt build keeps shipping until this port replaces it for real users. Goal once it does: delete the Qt-Android pieces (`qml/`, `androidutils.{h,cpp}`, `android/`, `dukto.pro`, `CMakeLists.txt`, `modules/SingleApplication`) — the desktop is already off Qt, on Wails.
 
 ## Why the rewrite
 
-- APK size: ~19–22 MB → ~3–5 MB (no Qt6 + QtQuick + Quick Controls bundled)
-- Material You / dynamic colors / edge-to-edge / predictive back / proper insets
-- Storage Access Framework for the destination directory and the share-with-Dukto flow (no more fighting Android scoped storage)
-- WorkManager / foreground service for in-flight transfers (Doze-friendly, survives backgrounding)
-- Native runtime permissions (`POST_NOTIFICATIONS` on Android 13+, etc.)
-- First-class Android Studio profiler / layout inspector / tracing
-- Lets us delete `qml/`, `androidutils.{h,cpp}`, `android/`, `dukto.pro`, `CMakeLists.txt`, `modules/SingleApplication` from the repo once parity is reached
+- APK size: ~22 MB → **~5–6 MB release / ~9–11 MB debug** (no Qt6 + QtQuick + Quick Controls bundled).
+- Material 3 with the **Dukto brand palette** (fixed `#248b00` green; Material You dynamic colors disabled on purpose so peers look consistent across devices) + edge-to-edge / predictive back / proper insets.
+- Storage Access Framework (SAF) for the destination directory and the share-with-Dukto flow — files land in a folder visible from any file manager.
+- Foreground service (`FOREGROUND_SERVICE_DATA_SYNC`) for in-flight transfers — Doze-friendly, survives backgrounding.
+- Native runtime permissions (`POST_NOTIFICATIONS` on Android 13+, etc.).
+- First-class Android Studio profiler / layout inspector / tracing.
+- Lets us delete the Qt-Android tree once parity is confirmed.
 
 ## Stack
 
-- AGP 8.7 + Kotlin 2.1 (configured via `gradle/libs.versions.toml`)
-- Jetpack Compose (BOM 2024.12) + Material 3
-- `compileSdk = 36`, `minSdk = 24` (Android 7.0+), `targetSdk = 36`
-- JVM toolchain 17
+- AGP 8.7 + Kotlin 2.1 (configured via `gradle/libs.versions.toml`).
+- Jetpack Compose (BOM 2024.12) + Material 3 + Coil 2.7 (image loading).
+- `compileSdk = 36`, `minSdk = 24` (Android 7.0+), `targetSdk = 36`.
+- JVM toolchain 17.
 
 ## First-time setup
 
-There's no `gradlew` shipped — bootstrap the wrapper once with whichever path is convenient:
-
-**Option A — Android Studio** (recommended): open `android-native/` in Android Studio. It will prompt to install the matching Gradle distribution and generate the wrapper for you, then the project syncs.
-
-**Option B — system Gradle**: install Gradle (e.g. `sdk install gradle 8.10` via SDKMAN, or `apt install gradle`) and run once at the repo root of this folder:
+The Gradle wrapper is bundled — `./gradlew` works out of the box once you have JDK 17 and an Android SDK with platform 36 (install via Android Studio's SDK Manager, or `sdkmanager` CLI).
 
 ```sh
 cd android-native
-gradle wrapper --gradle-version 8.10
+./gradlew assembleDebug                  # debug APK → app/build/outputs/apk/debug/
+./gradlew installDebug                   # install on the connected device/emulator
+./gradlew assembleRelease                # unsigned release APK
+./gradlew test                           # JVM unit tests (incl. wire-format round-trip)
 ```
 
-That writes `gradlew`, `gradlew.bat`, and `gradle/wrapper/gradle-wrapper.{jar,properties}`. From then on use `./gradlew` for everything.
-
-## Common commands (after the wrapper exists)
+For wireless ADB:
 
 ```sh
-./gradlew assembleDebug           # debug APK → app/build/outputs/apk/debug/
-./gradlew installDebug            # install on the connected device/emulator
-./gradlew test                    # JVM unit tests
-./gradlew connectedDebugAndroidTest   # instrumentation tests on a device
-./gradlew assembleRelease         # unsigned release APK
+adb pair  <PHONE_IP>:<PAIR_PORT>          # 6-digit code from the phone's pairing dialog
+adb connect <PHONE_IP>:<CONNECT_PORT>     # main connect port (visible on the Wireless debugging screen)
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n dev.wasabules.dukto/.MainActivity
 ```
-
-The dev/Qt builds use distinct `applicationId`s, so `installDebug` here will not touch the Qt APK (and vice versa).
 
 ## Layout
 
@@ -62,71 +56,87 @@ android-native/
 │   └── src/main/
 │       ├── AndroidManifest.xml
 │       ├── kotlin/dev/wasabules/dukto/
-│       │   ├── MainActivity.kt          — Compose entry, edge-to-edge
-│       │   ├── ui/theme/                — Material 3 + dynamic colors
-│       │   ├── protocol/                — wire format port (TODO)
-│       │   ├── discovery/               — UDP messenger (TODO)
-│       │   ├── transfer/                — TCP receiver/sender (TODO)
+│       │   ├── MainActivity.kt          — Compose entry, edge-to-edge, share-intent capture
+│       │   ├── DuktoApp.kt              — Application; engine ownership, notif channel
+│       │   ├── DuktoEngine.kt           — process-wide orchestration (Messenger / Server / Sender / AvatarServer)
+│       │   ├── ui/                      — Compose surfaces:
+│       │   │   ├── DuktoScreen.kt       — top bar (avatar + status), peer list, activity list, send sheet
+│       │   │   ├── SettingsSheet.kt     — Profile / Appearance / Destination / Security / Activity / Audit
+│       │   │   ├── PendingPeerDialog.kt — confirm-unknown 60 s modal
+│       │   │   ├── PreviewScreen.kt     — file detail / thumbnail grid
+│       │   │   ├── FileMeta.kt          — content-resolver metadata helpers
+│       │   │   └── theme/Theme.kt       — fixed Dukto green palette (light + dark)
+│       │   ├── protocol/                — wire format (BuddyMessage, SessionHeader, ElementHeader, signature)
+│       │   ├── discovery/               — UDP messenger + MulticastLock
+│       │   ├── transfer/                — TCP server + receiver + sender + foreground service
+│       │   ├── policy/                  — SessionPolicy: master switch / block list / confirm-unknown / size cap / extension reject
+│       │   ├── audit/                   — append-only JSON-per-line log, 1 MiB rotation
+│       │   ├── settings/                — SharedPreferences-backed Settings + ThemeMode
+│       │   ├── avatar/                  — HTTP side-channel (port 4645) + initials renderer
 │       │   └── platform/                — OS identity / device name
-│       └── res/
+│       └── res/                         — Material theme, mipmap-* launcher icons (Dukto pipe on green)
 └── README.md
 ```
 
-## Migration checklist
+## Status — what's in vs not yet
 
-Sources of truth to mirror:
+### Wire format
+- ✅ `protocol`: `BuddyMessage` encode/decode (UDP datagrams 0x01–0x05).
+- ✅ `protocol`: `SessionHeader` + `ElementHeader` streaming codec (TCP).
+- ✅ `protocol`: `buildSignature("<user> at <host> (Android)")`.
+- ✅ JVM round-trip + invalid-input tests (18/18 — covers Qt-compatible rejection rules).
+- ⏳ Cross-stack fixture tests: feed the `.bin` fixtures the Go side will eventually generate. Left for follow-up once Qt fixture generator runs in CI.
 
-- Wire format: [`docs/PROTOCOL.md`](../docs/PROTOCOL.md) (frozen — interop with the Wails desktop and third-party Dukto peers).
-- Reference Go port: [`wails/internal/protocol`](../wails/internal/protocol), [`discovery`](../wails/internal/discovery), [`transfer`](../wails/internal/transfer).
-- Original Qt Android code: `network/`, `androidutils.cpp`, `qml/new/`.
+### Networking
+- ✅ `discovery.Messenger`: HELLO/GOODBYE, self-echo suppression, periodic broadcast, `WifiManager.MulticastLock`, GOODBYE on stop, unicast reply on broadcast.
+- ✅ `transfer.Server`: TCP server on port 4644, accept loop, per-session coroutine, policy-gated.
+- ✅ `transfer.Receiver`: streaming parse → SAF tree (when configured) or `getExternalFilesDir(DOWNLOADS)/dukto-<ts>-<src>/` fallback. Captures per-file URIs for the preview UI.
+- ✅ `transfer.Sender`: text snippet, multi-URI files, recursive folder send via SAF tree URI.
+- ✅ Cancel in-flight transfer (closes active socket on either side).
+- ✅ `httpserve` / `avatar.AvatarServer`: avatar HTTP side-channel on `udp_port + 1` (port 4645) — initials tile by default, custom user-picked PNG when set (auto-resized to 64×64).
+- ⏳ Per-source HELLO cooldown / broadcast-storm guard. Lower priority — can layer on top later.
 
-### Phase 1 — wire format port
+### UI (Compose)
+- ✅ `DuktoScreen` — top bar (Dukto logo avatar + receiving status + settings cog), peer list with per-peer avatar (Coil-fetched from the peer's avatar HTTP endpoint, falls back to initials), recent activity, in-flight progress bar with cancel.
+- ✅ `SettingsSheet` — Profile (avatar pick + display name), Appearance (System / Light / Dark theme override), Destination (SAF folder picker), Security (master switch, confirm-unknown, blocked extensions, max session size, blocked & approved peers, forget approvals), Recent activity (max-entries cap + Clear), Audit log (last 15 entries + Clear).
+- ✅ Send sheet — text snippet + multi-file picker + folder picker.
+- ✅ Custom avatar: gallery picker → `BitmapFactory` decode → centre-crop + scale to 64×64 → re-encode PNG → persist to `filesDir/avatar.png` → live update of the AvatarServer's payload.
+- ✅ Material 3 with **fixed Dukto green palette** (light + dark) — keyed off the original Qt `theme.cpp`. Theme can be system / light / dark.
+- ✅ Pending-peer modal (60 s countdown, Allow once / Allow always / Reject / Block forever).
+- ✅ `PreviewScreen` — image thumbnails via Coil + text snippet rendering + ACTION_VIEW chooser fallback.
+- ⏳ Speed / ETA in the in-flight progress bar (currently shows bytes / total).
+- ⏳ About / terms-of-use first-run screen.
 
-- [x] `protocol`: `BuddyMessage` encode/decode (UDP datagrams 0x01–0x05)
-- [x] `protocol`: `SessionHeader` + `ElementHeader` streaming codec (TCP)
-- [x] `protocol`: `buildSignature("<user> at <host> (Android)")`
-- [x] JVM round-trip + invalid-input tests (18/18)
-- [ ] Cross-stack fixture tests: feed the same `tests/fixtures/*.bin` the Go side uses — left for follow-up once Qt fixture generator runs in CI.
+### Android plumbing
+- ✅ Notification channel created at app start (`dukto.transfers`).
+- ✅ `POST_NOTIFICATIONS` runtime request on Android 13+.
+- ✅ Share intent: `ACTION_SEND` / `ACTION_SEND_MULTIPLE` → URIs surfaced as a "ready to send" banner.
+- ✅ `FOREGROUND_SERVICE_DATA_SYNC` foreground service for active transfers — keeps the OS from killing the process under Doze.
+- ✅ Per-transfer progress notification with content intent back to the activity.
+- ✅ `usesCleartextTraffic="true"` declared (the Dukto protocol is cleartext HTTP/TCP by design).
+- ✅ Adaptive launcher icon: Dukto pipe on Dukto-green background (`mipmap-anydpi-v26/ic_launcher.xml` + bitmap fallbacks at every density).
 
-### Phase 2 — networking
+### Security parity (matches the Wails desktop's defense-in-depth chain)
+- ✅ Master switch (Receiving on/off).
+- ✅ Block list (signature-based hard reject).
+- ✅ Confirm unknown peers (60 s modal, AllowOnce / AllowAlways → adds to approvedPeers / Reject / Block forever → adds to blockedPeers).
+- ✅ Auto-reject by extension (default list mirrors Wails: `exe,bat,cmd,com,scr,msi,ps1,vbs,jse,lnk`).
+- ✅ Max session size cap (MB).
+- ✅ Audit log (append-only JSON-per-line, 1 MiB rotation, viewable in Settings).
+- ⏳ Whitelist-only mode (overlap with confirm-unknown — pick one for now).
+- ⏳ Per-IP TCP / UDP cooldowns (low priority on phones with one wifi iface).
+- ⏳ Free-disk percent guard.
 
-- [x] `discovery.Messenger`: HELLO/GOODBYE, self-echo suppression, periodic broadcast, `WifiManager.MulticastLock`
-- [x] `transfer.Server`: TCP server on port 4644, accept loop, per-session coroutines
-- [x] `transfer.Receiver`: streaming parse → files under `getExternalFilesDir(DIRECTORY_DOWNLOADS)/dukto-<ts>-<src>/`
-- [x] `transfer.Sender`: text snippet + multi-URI files
-- [ ] Per-source HELLO cooldown / broadcast-storm guard (security hardening, can ride on top later)
-- [ ] Avatar HTTP side-channel on `udp_port + 1`
-- [ ] SAF tree picker for destination (currently uses app-private external storage — works without permissions but less discoverable)
-- [ ] Folder send (recursive directory traversal of a SAF tree)
-
-### Phase 3 — UI (Compose)
-
-- [x] Top-level `DuktoScreen` with peer list + recent activity + in-flight progress bar
-- [x] Settings bottom sheet (display name)
-- [x] Send bottom sheet (text snippet + file picker entry point)
-- [x] Material 3 + Material You dynamic colors (Android 12+)
-- [ ] Profile avatar (camera/gallery picker, expose via the existing avatar HTTP endpoint once Phase 2 ships it)
-- [ ] Cancel in-flight transfer
-- [ ] About / terms-of-use first-run screen
-
-### Phase 4 — Android plumbing
-
-- [x] Notification channel created at app start
-- [x] Notification permission request on Android 13+
-- [x] Share intent: `ACTION_SEND` / `ACTION_SEND_MULTIPLE` → URIs surfaced as a "ready to send" banner
-- [ ] Foreground service for active transfers (`FOREGROUND_SERVICE_DATA_SYNC`) — current implementation runs server in a process-scope coroutine, fine for foreground, fragile in background; add the service when Phase 2 SAF tree-picker lands
-- [ ] Per-transfer progress notifications
-
-### Phase 5 — release
-
-- [x] `.github/workflows/build-android-native.yml` — debug + unsigned-release APKs as artifacts on push
-- [x] `release.yml`: `android-native` job that ships `dukto-android-native-x.y.z-unsigned.apk` alongside the Qt APKs on tag push
-- [ ] Signing keystore (out-of-band, like the Qt APKs)
-- [ ] Once usage confirms parity → drop the Qt build (see [`docs/PORT_SCOPE.md`](../docs/PORT_SCOPE.md) "Scope of the Qt6 codebase after the port")
+### Release
+- ✅ `.github/workflows/build-android-native.yml` — debug + unsigned-release APKs as artifacts on every push.
+- ✅ `release.yml` — `android-native` job ships `dukto-android-native-x.y.z-debug-signed.apk` + `dukto-android-native-x.y.z-release-unsigned.apk` alongside Qt / Wails artifacts on tag push.
+- ⏳ Real signing keystore for the release APK (out-of-band, like the Qt APKs).
+- ⏳ Once usage confirms parity → drop the Qt-Android tree (see [`docs/PORT_SCOPE.md`](../docs/PORT_SCOPE.md)).
 
 ## Testing alongside the Qt APK
 
-1. Install the Qt APK on the phone (current release): `adb install dukto-android-6.2.0-arm64_v8a.apk`
-2. Build + install the native one: `./gradlew installDebug`
-3. Both apps appear separately on the home screen — labeled "Dukto" (Qt) and "Dukto Native" (this).
-4. Discover each other on the same Wi-Fi as if they were two distinct peers — that's the parity smoke test.
+1. Install the Qt APK on the phone (current release): `adb install dukto-android-6.2.0-arm64_v8a.apk`.
+2. Build + install the native one: `./gradlew installDebug`.
+3. Both apps appear separately on the home screen — labelled "Dukto" (Qt) and "Dukto Native" (this), with distinct icons (the native one carries the Dukto pipe-on-green adaptive icon).
+4. Discover each other on the same Wi-Fi as two distinct peers — that's the parity smoke test.
+5. The native app also interoperates with the Wails desktop (`192.168.x.x` from `wails build`'s output) and any third-party Dukto peer, since all three speak the protocol in [`docs/PROTOCOL.md`](../docs/PROTOCOL.md).

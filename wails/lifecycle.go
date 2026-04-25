@@ -45,7 +45,7 @@ func (a *App) startup(ctx context.Context) {
 		log.Printf("dukto: tcp server start: %v", err)
 	}
 
-	a.avatarServer = avatar.New(avatar.DefaultRenderer(a.currentSignature()))
+	a.avatarServer = avatar.New(a.currentAvatarRenderer())
 	if err := a.avatarServer.Start(protocol.DefaultPort); err != nil {
 		log.Printf("dukto: avatar server start: %v", err)
 	}

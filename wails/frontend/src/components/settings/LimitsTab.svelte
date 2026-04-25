@@ -109,7 +109,7 @@
   .drawer-section {
     margin-top: 12px;
     padding-top: 8px;
-    border-top: 1px solid #e2e8f0;
+    border-top: 1px solid var(--panel-border);
   }
   .drawer-section.first {
     margin-top: 0;
@@ -120,20 +120,22 @@
     font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #64748b;
+    color: var(--text-dim);
     margin-bottom: 4px;
   }
   .hint {
     margin: 6px 0 0;
-    color: #64748b;
+    color: var(--text-dim);
     font-size: 0.8rem;
   }
   input[type='number'] {
     box-sizing: border-box;
     font: inherit;
     padding: 6px 8px;
-    border: 1px solid #cbd5e1;
+    border: 1px solid var(--input-border);
     border-radius: 4px;
+      background-color: var(--input-bg);
+      color: var(--text);
   }
   .row {
     display: flex;

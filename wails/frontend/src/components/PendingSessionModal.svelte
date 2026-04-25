@@ -49,7 +49,7 @@
     padding: 24px;
   }
   .pending-modal {
-    background: #fff;
+    background: var(--panel-bg);
     border-radius: 8px;
     box-shadow: 0 20px 50px rgba(15, 23, 42, 0.3);
     width: min(440px, 100%);
@@ -64,7 +64,7 @@
     margin: 4px 0;
   }
   .meta {
-    color: #64748b;
+    color: var(--text-dim);
     font-size: 0.85rem;
     margin: 0 0 12px;
   }
@@ -72,7 +72,7 @@
     margin: 0 0 8px;
   }
   .timer {
-    color: #94a3b8;
+    color: var(--text-faint);
     font-size: 0.85rem;
     margin: 0 0 16px;
   }
@@ -89,13 +89,13 @@
     cursor: pointer;
   }
   .allow {
-    background: #2563eb;
-    border-color: #2563eb;
-    color: #fff;
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-on);
   }
   .deny {
-    background: #fff;
-    border-color: #cbd5e1;
-    color: #0f172a;
+    background: var(--panel-bg);
+    border-color: var(--input-border);
+    color: var(--text-strong);
   }
 </style>

@@ -46,7 +46,7 @@
   .drawer-section {
     margin-top: 12px;
     padding-top: 8px;
-    border-top: 1px solid #e2e8f0;
+    border-top: 1px solid var(--panel-border);
   }
   .drawer-section.first {
     margin-top: 0;
@@ -60,14 +60,14 @@
     font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #64748b;
+    color: var(--text-dim);
     margin-bottom: 6px;
   }
   .spacer {
     flex: 1;
   }
   .empty {
-    color: #94a3b8;
+    color: var(--text-faint);
     font-size: 0.9rem;
   }
   .log {
@@ -77,20 +77,20 @@
     max-height: 50vh;
     overflow-y: auto;
     padding: 4px;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background: var(--panel-bg-2);
+    border: 1px solid var(--panel-border);
     border-radius: 4px;
     font-size: 0.8rem;
   }
   .entry {
     padding: 4px 6px;
     border-radius: 3px;
-    background: #fff;
-    border: 1px solid #e2e8f0;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
   }
   .entry.rejected {
-    border-color: #fecaca;
-    background: #fef2f2;
+    border-color: var(--error-border);
+    background: var(--error-bg);
   }
   .row {
     display: flex;
@@ -101,26 +101,26 @@
     font-weight: 600;
     text-transform: uppercase;
     font-size: 0.7rem;
-    color: #475569;
+    color: var(--text);
   }
   .entry.rejected .kind {
-    color: #b91c1c;
+    color: var(--error);
   }
   .reason {
-    color: #0f172a;
+    color: var(--text-strong);
     font-family: ui-monospace, monospace;
     font-size: 0.75rem;
   }
   .when {
     margin-left: auto;
-    color: #94a3b8;
+    color: var(--text-faint);
     font-size: 0.7rem;
   }
   .meta {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    color: #64748b;
+    color: var(--text-dim);
     font-size: 0.75rem;
   }
   .detail {
@@ -129,15 +129,15 @@
   button {
     padding: 2px 8px;
     font: inherit;
-    border: 1px solid #2563eb;
-    background: #2563eb;
-    color: #fff;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: var(--accent-on);
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.75rem;
   }
   button.ghost {
     background: transparent;
-    color: #2563eb;
+    color: var(--accent);
   }
 </style>

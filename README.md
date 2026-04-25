@@ -1,6 +1,6 @@
 # Dukto
 
-Dukto is an easy file transfer tool for LAN. It was created by Emanuele Colombo, and ported to Qt 5/6 by [xuzhen and other contributors](https://github.com/xuzhen/dukto/graphs/contributors). This fork maintains the Qt Android build **and** ships a Wails v2 / Go / Svelte-TS rewrite of the desktop frontend.
+Dukto is an easy file transfer tool for LAN. It was created by Emanuele Colombo, ported to Qt 5/6 by [xuzhen and other contributors](https://github.com/xuzhen/dukto/graphs/contributors), and this fork adds a Wails v2 / Go / Svelte-TS rewrite of the **desktop** frontend and a Kotlin / Jetpack Compose rewrite of the **Android** app.
 
 Now it supports Windows, Linux, MacOS and Android.
 
@@ -11,99 +11,134 @@ Dukto transfers files and text without encryption and is only designed for use i
 
 This repository hosts three codebases that speak the same LAN protocol:
 
-- **Root tree (this directory)** — the original Qt6/QML app. Currently the source of truth for the **Android** build (will be retired once `android-native/` reaches parity).
-- **`wails/`** — Wails v2 + Go + Svelte-TS rewrite of the **desktop** frontend (Windows, macOS, Linux). Has feature parity with Qt6 for transfer/discovery, plus extra security hardening. See [`wails/README.md`](wails/README.md).
-- **`android-native/`** — Kotlin + Jetpack Compose rewrite of the **Android** app (work in progress, runs side-by-side with the Qt APK on the same device). See [`android-native/README.md`](android-native/README.md).
+| Tree | Stack | Targets | Status |
+|---|---|---|---|
+| `./` (root) | Qt6 / QML, C++ | Android (still ships) + legacy Qt desktop | Source-of-truth for the Qt-Android APK; desktop will be retired |
+| [`wails/`](wails/README.md) | Wails v2, Go, Svelte-TS | Windows / macOS / Linux desktop | Production |
+| [`android-native/`](android-native/README.md) | Kotlin, Jetpack Compose, AGP | Android | Functional, packaging-ready (debug-signed APK shipped, release APK unsigned) |
 
 The wire format every tree implements is documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md); the port plan and coexistence rules are in [`docs/PORT_SCOPE.md`](docs/PORT_SCOPE.md).
+
+The native Android APK uses `applicationId = dev.wasabules.dukto`, distinct from the Qt build's `com.github.xuzhen.dukto`, so both can be installed on the same device for parity testing.
 
 ## Specs at a glance
 
 | | |
 |---|---|
 | **Current version** | 6.2.0 (see `version.h`) |
-| **Supported OS** | Windows 10+, macOS 11+, Linux, Android 8.0+ (Qt6 APK) / Android 5.0+ (Qt5 APK) |
+| **Supported OS** | Windows 10+, macOS 11+, Linux, Android 7.0+ (native APK) / Android 8.0+ (Qt6 APK) / Android 5.0+ (Qt5 APK) |
 | **Network** | IPv4 only, UDP + TCP on port `4644` (configurable); avatar HTTP on `udp_port + 1` |
 | **Encryption** | None — trusted LAN only |
 | **Discovery** | UDP broadcast on every up IPv4 non-loopback interface |
 | **Wire format** | Little-endian, framed per datagram / per element. See `docs/PROTOCOL.md`. |
 | **Settings store (Qt)** | `QSettings` under `msec.it/Dukto` (registry / plist / `~/.config/msec.it/Dukto.conf`) |
 | **Settings store (Wails)** | JSON under `<UserConfigDir>/dukto/` — one-time migration from the Qt store on first run |
+| **Settings store (Android native)** | `SharedPreferences` (`dukto.xml`) under the app's data dir; receive destination tree URI persisted via `takePersistableUriPermission` |
 | **Runtime deps (Qt desktop)** | Qt 5.3+ or Qt 6.x; libnotify (optional, Linux) |
-| **Runtime deps (Wails)** | WebView2 (Windows), WebKitGTK (Linux), WKWebView (macOS, system-provided) |
+| **Runtime deps (Wails)** | WebView2 (Windows), WebKitGTK 4.1 (Linux), WKWebView (macOS, system-provided) |
+| **Runtime deps (Android native)** | None beyond the OS — pure-Kotlin, no NDK |
 
-## Feature comparison — Qt6 vs Wails port
+## Feature comparison — Desktop (Qt6 ↔ Wails port)
 
-| Feature                                            | Qt6 (root tree) | Wails (`wails/`)              |
-|----------------------------------------------------|:---------------:|:------------------------------:|
-| Send/receive files, folders, text                  | ✅              | ✅                             |
-| Clipboard text / paste-image-to-send               | ✅              | ✅                             |
-| Screen capture send                                 | ✅              | ⏳ not yet ported              |
-| Recent activity list (persistent)                  | ✅              | ✅                             |
-| Buddy name, avatar, avatar HTTP side-channel       | ✅              | ✅                             |
-| Dark/light/auto theme detection (OS-native)        | ✅              | ✅                             |
-| Custom theme colour picker                         | ✅              | ❌ fixed palette               |
-| System tray + close-to-tray                        | ✅              | ✅                             |
-| Receive notifications                               | ✅              | ✅                             |
-| Cross-subnet manual peers                           | ❌              | ✅                             |
-| Per-interface send/listen allow-list                | ❌              | ✅                             |
-| Whitelist (only-approved-buddies mode)             | ❌              | ✅                             |
-| Block list (hard-reject by signature)              | ❌              | ✅                             |
-| Confirm unknown peers (first-session modal)        | ❌              | ✅ (60 s timeout)              |
-| Auto-reject by extension                            | ❌              | ✅                             |
-| Large-session size threshold                        | ❌              | ✅                             |
-| Max files / max path depth per session              | ❌              | ✅                             |
-| Minimum free-disk-space guard                       | ❌              | ✅                             |
-| TCP per-IP accept cooldown                          | ❌              | ✅                             |
-| UDP HELLO per-IP cooldown                           | ❌              | ✅                             |
-| Receiving master switch + idle auto-disable        | ❌              | ✅                             |
-| Audit log (append-only, rotated, 0o600)             | ❌              | ✅ viewable in-app             |
-| Speed + ETA in progress bar                         | Partial         | ✅                             |
-| Cancel transfer mid-session                         | ❌              | ✅                             |
-| Keyboard shortcuts                                   | Partial         | ✅                             |
-| Single-instance enforcement                          | ✅ (`SingleApplication`) | ⏳ not yet ported  |
-| Windows taskbar progress (`ITaskbarList3`)          | ✅              | ⏳ not yet ported              |
-| Android target                                       | ✅              | ❌ out of scope                |
+| Feature                                              | Qt6 (root tree) | Wails (`wails/`)              |
+|------------------------------------------------------|:---------------:|:-----------------------------:|
+| Send/receive files, folders, text                    | ✅              | ✅                            |
+| Clipboard text / paste-image-to-send                 | ✅              | ✅                            |
+| Screen capture send                                   | ✅              | ⏳ not yet ported             |
+| Recent activity list (persistent)                    | ✅              | ✅                            |
+| Buddy name, avatar, avatar HTTP side-channel         | ✅              | ✅                            |
+| Custom avatar (image picker → 64×64 PNG)             | ❌              | ✅                            |
+| Dark/light/auto theme detection (OS-native)          | ✅              | ✅                            |
+| Manual theme override (System / Light / Dark)        | ❌              | ✅                            |
+| Custom theme colour picker                           | ✅              | ❌ fixed Dukto green palette  |
+| System tray + close-to-tray                          | ✅              | ✅                            |
+| Receive notifications                                 | ✅              | ✅                            |
+| Cross-subnet manual peers                             | ❌              | ✅                            |
+| Per-interface send/listen allow-list                  | ❌              | ✅                            |
+| Whitelist (only-approved-buddies mode)               | ❌              | ✅                            |
+| Block list (hard-reject by signature)                | ❌              | ✅                            |
+| Confirm unknown peers (first-session modal)          | ❌              | ✅ (60 s timeout)             |
+| Auto-reject by extension                              | ❌              | ✅                            |
+| Large-session size threshold                          | ❌              | ✅                            |
+| Max files / max path depth per session                | ❌              | ✅                            |
+| Minimum free-disk-space guard                         | ❌              | ✅                            |
+| TCP per-IP accept cooldown                            | ❌              | ✅                            |
+| UDP HELLO per-IP cooldown                             | ❌              | ✅                            |
+| Receiving master switch + idle auto-disable          | ❌              | ✅                            |
+| Audit log (append-only, rotated, 0o600)               | ❌              | ✅ viewable in-app            |
+| Speed + ETA in progress bar                           | Partial         | ✅                            |
+| Cancel transfer mid-session                           | ❌              | ✅                            |
+| Pick file / pick folder buttons + drag-drop          | Partial         | ✅                            |
+| Keyboard shortcuts                                    | Partial         | ✅                            |
+| Single-instance enforcement                           | ✅ (`SingleApplication`) | ✅ (Wails `SingleInstanceLock`) |
+| Windows taskbar progress (`ITaskbarList3`)            | ✅              | ⏳ not yet ported             |
+| Android target                                        | ✅              | ❌ out of scope               |
 
 The Wails port is the long-term desktop frontend; the Qt tree will be pared down to Android-only once the Wails builds replace the Qt desktop builds for real users. See `docs/PORT_SCOPE.md` for the transition plan.
 
+## Feature comparison — Android (Qt6 ↔ Native Kotlin/Compose)
+
+| Feature                                              | Qt6-Android (root) | Native (`android-native/`)    |
+|------------------------------------------------------|:------------------:|:-----------------------------:|
+| Send/receive files, text                             | ✅                 | ✅                            |
+| Folder send (recursive walk)                          | ✅                 | ✅ (via SAF tree picker)      |
+| Buddy name, avatar HTTP side-channel                 | ✅                 | ✅                            |
+| Custom avatar (gallery picker, 64×64 PNG)            | ❌                 | ✅                            |
+| Receive into user-chosen folder (SAF tree URI)       | Partial            | ✅                            |
+| File preview (in-app + system viewer fallback)       | Partial            | ✅ (image thumbs, text snippet, ACTION_VIEW chooser) |
+| Activity log persistent across restarts              | ❌                 | ✅ (SharedPreferences JSON)   |
+| Activity log entry cap + Clear                        | ❌                 | ✅                            |
+| Manual theme override (System / Light / Dark)        | Partial            | ✅                            |
+| Material 3 (Material You disabled — fixed Dukto palette) | ❌             | ✅                            |
+| Brand identity (Dukto green logo + colour scheme)    | ✅                 | ✅                            |
+| Foreground service for in-flight transfers (Doze-safe) | Partial          | ✅ (`FOREGROUND_SERVICE_DATA_SYNC`) |
+| Per-transfer notification with progress              | Partial            | ✅                            |
+| `POST_NOTIFICATIONS` runtime permission flow         | n/a (older API)    | ✅                            |
+| `ACTION_SEND` / `ACTION_SEND_MULTIPLE` share target  | ❌                 | ✅                            |
+| Receiving master switch                              | ❌                 | ✅                            |
+| Block list (hard-reject by signature)                | ❌                 | ✅                            |
+| Confirm unknown peers (60 s modal)                   | ❌                 | ✅                            |
+| Auto-reject by extension                              | ❌                 | ✅                            |
+| Max session size                                      | ❌                 | ✅                            |
+| Audit log (1 MiB rotated, viewable in Settings)      | ❌                 | ✅                            |
+| Cancel transfer mid-session                           | ❌                 | ✅                            |
+| Wireless ADB pairing tested                           | n/a                | ✅                            |
+| `compileSdk` / `minSdk` / `targetSdk`                 | (Qt-managed)       | 36 / 24 / 36                  |
+| APK size (release, unsigned)                          | ~22 MB (arm64-v8a) | ~5–6 MB                       |
+| APK size (debug-signed, single ABI)                   | ~22 MB             | ~9–11 MB                      |
+| Wire format compat with Qt / Wails peers              | ✅                 | ✅ (Kotlin port + JVM tests)  |
+
+The native APK has reached functional parity with the Qt one for the day-to-day flows (discover → send/receive text, files, folders, with thumbnails and a preview screen), and it ships extra security gates that mirror the Wails desktop. Once it's been used in the wild for a release cycle, the Qt-Android tree can be retired alongside the Qt-desktop tree (see [`docs/PORT_SCOPE.md`](docs/PORT_SCOPE.md)).
+
 ### Prebuilt Packages
 
-#### Windows
-Portable versions can be downloaded from [the releases page](https://github.com/xuzhen/dukto/releases)
+Every release on the [GitHub releases page](https://github.com/Wasabules/dukto-wails/releases) of this fork ships nine artifacts:
 
-The Qt6 version supports Windows 10+ only. If you are still using Windows 7, download the Qt5 version instead.
+| File pattern | What it is |
+|---|---|
+| `dukto-wails-X.Y.Z-linux-amd64.tar.gz` | Wails Linux build — extract and run `./wails` (binary inside the tarball) |
+| `dukto-wails-X.Y.Z-windows-amd64.zip` | Wails Windows build — unzip and run `wails.exe` |
+| `dukto-wails-X.Y.Z-darwin-universal.zip` | Wails macOS bundle — unzip and run `dukto.app` |
+| `dukto-qt6-X.Y.Z-linux-amd64.tar.gz` | Qt6 desktop, Linux — extract and run `./<dir>/AppRun` |
+| `dukto-qt6-X.Y.Z-windows-amd64.zip` | Qt6 desktop, Windows — unzip and run `dukto.exe` (Qt DLLs deployed alongside via `windeployqt`) |
+| `dukto-qt6-X.Y.Z-darwin-universal.zip` | Qt6 desktop, macOS — unzip and run `dukto.app` (frameworks deployed via `macdeployqt`) |
+| `dukto-qt5-X.Y.Z-linux-amd64.tar.gz` | Qt5 desktop, Linux — same shape as Qt6, kept for legacy distros |
+| `dukto-android-X.Y.Z-arm64_v8a.apk` / `…-armv7.apk` | Qt6-Android APKs (unsigned) |
+| `dukto-android-native-X.Y.Z-debug-signed.apk` | Native Android APK signed with the debug keystore — installable directly on any device for testing |
+| `dukto-android-native-X.Y.Z-release-unsigned.apk` | Native Android APK release build — sign out-of-band before distribution |
 
-If you can not open the 7z files, visit https://7-zip.org/ and install 7-zip
-
-If you get `The program can't start because MSVCP140.dll is missing from your computer. Try reinstalling the program to fix this problem` error , download and install the Visual C++ Redistributable packages for VS2015-2022 from [Microsoft](https://learn.microsoft.com/en-US/cpp/windows/latest-supported-vc-redist#visual-studio-2015-2017-2019-and-2022). 
-Direct links: [X64](https://aka.ms/vs/17/release/vc_redist.x64.exe) or [X86](https://aka.ms/vs/17/release/vc_redist.x86.exe)
-
-#### macOS
-The universal app for macOS can be downloaded from [the releases page](https://github.com/xuzhen/dukto/releases)
-
-Supports macOS 11+
-
-#### Android
-APKs can be downloaded from [the releases page](https://github.com/xuzhen/dukto/releases)
-
-The `dukto_*_qt6.apk` supports Android 8.0 (Oreo) and later.
-
-The `dukto_*_qt5.apk` supports Android 5.0 (Lollipop) and later.
-
-#### Ubuntu and derivatives:
-Use [this PPA](https://launchpad.net/~xuzhen666/+archive/ubuntu/dukto) 
+> **Note.** Both the Qt-Android APKs and the native release APK are unsigned by the workflow; sign them with your own keystore before distributing. The native debug APK is signed with the standard Android debug keystore so it installs on any device for testing without further setup.
 
 ### Build from source code
 
-The repo has two build systems — pick whichever matches your target.
+The repo has three build systems — pick whichever matches your target.
 
 #### A. Wails desktop app (Windows / macOS / Linux) — recommended for desktop
 
 **Dependencies**
 
 - Go 1.21+ (1.23 is what the module targets).
-- [Wails v2 CLI](https://wails.io/docs/gettingstarted/installation): `go install github.com/wailsapp/wails/v2/cmd/wails@latest`
+- [Wails v2 CLI](https://wails.io/docs/gettingstarted/installation): `go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0`.
 - Node.js 18+.
 - Platform runtime libs: `webkit2gtk-4.1-dev libgtk-3-dev` on Linux; nothing extra on Windows (WebView2 is auto-installed by modern Windows) or macOS.
 - Run `wails doctor` to verify the toolchain.
@@ -119,9 +154,39 @@ go test ./...            # Go unit tests (incl. wire-format parity)
 cd frontend && npm run check   # TypeScript / Svelte check
 ```
 
+The `webkit2_41` build tag is pinned in `wails.json`, so `wails build` and `wails dev` automatically link against `libwebkit2gtk-4.1` (Ubuntu 24.04+ no longer ships the 4.0 series). On Windows/macOS the tag is a no-op.
+
 See [`wails/README.md`](wails/README.md) for the full developer guide.
 
-#### B. Qt Dukto (Android target; legacy desktop)
+#### B. Native Android app (Kotlin + Compose) — recommended for Android
+
+**Dependencies**
+
+- JDK 17 (Temurin / OpenJDK).
+- Android SDK with platform 36 + build-tools 36 (install via Android Studio's SDK Manager, or `sdkmanager` CLI).
+- Optional but recommended: Android Studio (Hedgehog or newer).
+
+**Build**
+
+```sh
+cd android-native
+./gradlew assembleDebug                  # debug APK → app/build/outputs/apk/debug/
+./gradlew installDebug                   # install on the connected device/emulator
+./gradlew assembleRelease                # unsigned release APK
+./gradlew test                           # JVM unit tests (incl. wire-format round-trip)
+```
+
+The native app installs alongside the Qt APK without conflict — they have distinct `applicationId`s. Wireless ADB pairing works fine for development:
+
+```sh
+adb pair  <PHONE_IP>:<PAIR_PORT>          # enter the 6-digit code from the phone
+adb connect <PHONE_IP>:<CONNECT_PORT>     # main connect port (visible on the Wireless debugging screen)
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+See [`android-native/README.md`](android-native/README.md) for the full migration checklist and developer guide.
+
+#### C. Qt Dukto (Android target; legacy desktop)
 
 **Dependencies**
 
@@ -170,23 +235,32 @@ make
 
 GitHub Actions workflows under `.github/workflows/`:
 
-| Workflow             | Trigger                           | What it does |
-|----------------------|-----------------------------------|--------------|
-| `ci.yml`             | Every push / PR                   | Fast lane: `go vet`, `go test ./...` and `npm run check` for the Wails port |
-| `build-wails.yml`    | Push / PR touching `wails/`       | `wails build` on Ubuntu, Windows and macOS |
-| `build-qt6.yml`      | Push / PR touching Qt sources     | Qt 6.8.1 CMake build on Ubuntu, Windows and macOS |
-| `build-qt5.yml`      | Push / PR touching Qt sources     | Qt 5.15.2 CMake build on Ubuntu (legacy coverage) |
-| `build-android.yml`  | Push / PR touching Qt sources     | Qt6-Android APK for `arm64_v8a` and `armv7` |
-| `release.yml`        | Push of tag `v*`, or manual       | Runs tests + every build target, then creates a GitHub release with all packaged artifacts attached |
+| Workflow                       | Trigger                                          | What it does |
+|--------------------------------|--------------------------------------------------|--------------|
+| `ci.yml`                       | Every push / PR                                  | Fast lane: `go vet`, `go test ./...` and `npm run check` for the Wails port |
+| `build-wails.yml`              | Push / PR touching `wails/`                      | `wails build` on Ubuntu, Windows and macOS |
+| `build-android-native.yml`     | Push / PR touching `android-native/`             | Gradle `test` + `assembleDebug` + `assembleRelease` (Ubuntu, JDK 17) — debug + unsigned-release APKs uploaded as artifacts |
+| `build-qt6.yml`                | Push / PR touching Qt sources                    | Qt 6.8.1 CMake build on Ubuntu, Windows and macOS |
+| `build-qt5.yml`                | Push / PR touching Qt sources                    | Qt 5.15.2 CMake build on Ubuntu (legacy coverage) |
+| `build-android.yml`            | Push / PR touching Qt sources                    | Qt6-Android APK for `arm64_v8a` and `armv7` |
+| `release.yml`                  | Push of tag `v*`, or manual                      | Runs tests + every build target (Wails ×3, Qt6 ×3, Qt5 Linux, Qt6-Android ×2 ABI, native Android), then publishes a GitHub release with all packaged artifacts attached |
+
+The Qt workflows have `paths-ignore` for `wails/**` and `android-native/**` so changes scoped to one of the rewrites don't trigger Qt rebuilds.
 
 ### Cutting a release
 
-1. Bump `version.h` (both `#define VERSION_*` and the `VERSION=x.y.z` line) and commit.
+1. Bump `version.h` (both the `#define VERSION_*` macros and the `VERSION=x.y.z` line read by `dukto.pro`) and commit.
 2. Tag the commit `vX.Y.Z` and push the tag:
    ```sh
    git tag v6.2.0
    git push origin v6.2.0
    ```
-3. `release.yml` runs on the tag push: gates on `go test` + `svelte-check`, then builds Wails (3 OS), Qt6 desktop (3 OS), Qt5 desktop (Linux) and Qt6-Android (arm64-v8a + armv7) in parallel. The final `publish` job downloads every artifact and creates a GitHub release titled `Dukto X.Y.Z` with auto-generated notes.
-4. Android APKs are currently unsigned — sign them out-of-band before distributing if needed.
+3. `release.yml` runs on the tag push: gates on `go test` + `svelte-check`, then builds in parallel:
+   - Wails desktop (Linux / Windows / macOS)
+   - Qt6 desktop (Linux / Windows / macOS, with `linuxdeploy` / `windeployqt` / `macdeployqt` so binaries are runnable without a system Qt install)
+   - Qt5 desktop (Linux only)
+   - Qt6-Android (`arm64_v8a` + `armv7`)
+   - Native Android (Kotlin/Compose, `debug-signed` + `release-unsigned` APKs)
+   The final `publish` job downloads every artifact and creates a GitHub release titled `Dukto X.Y.Z` with auto-generated notes.
+4. **Signing**: the Qt-Android APKs are unsigned; the native-Android `release-unsigned.apk` is unsigned. Sign them with your own keystore before distributing — the `debug-signed.apk` is for testing only. Desktop binaries don't need code-signing for distribution but you may want to sign them on macOS / Windows to avoid Gatekeeper / SmartScreen prompts.
 5. `workflow_dispatch` is also available from the Actions tab for re-runs; pass the existing tag as input.

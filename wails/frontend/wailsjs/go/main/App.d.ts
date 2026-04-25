@@ -25,6 +25,8 @@ export function CancelTransfer():Promise<void>;
 
 export function ClearAudit():Promise<void>;
 
+export function ClearCustomAvatar():Promise<void>;
+
 export function ClearHistory():Promise<void>;
 
 export function CloseToTray():Promise<boolean>;
@@ -41,6 +43,8 @@ export function FileHash(arg1:string):Promise<string>;
 
 export function ForgetApprovedPeers():Promise<void>;
 
+export function HasCustomAvatar():Promise<boolean>;
+
 export function History():Promise<Array<Record<string, any>>>;
 
 export function IdleAutoDisableMinutes():Promise<number>;
@@ -48,6 +52,8 @@ export function IdleAutoDisableMinutes():Promise<number>;
 export function LargeFileThresholdMB():Promise<number>;
 
 export function LocalAddresses():Promise<Array<string>>;
+
+export function LocalAvatarDataURL():Promise<string>;
 
 export function ManualPeers():Promise<Array<string>>;
 
@@ -63,9 +69,15 @@ export function OpenPath(arg1:string):Promise<void>;
 
 export function Peers():Promise<Array<main.PeerView>>;
 
+export function PickAndSetCustomAvatar():Promise<string>;
+
 export function PickDestDir():Promise<string>;
 
 export function PickExportPath(arg1:string):Promise<string>;
+
+export function PickFilesToSend():Promise<Array<string>>;
+
+export function PickFolderToSend():Promise<string>;
 
 export function QRCodeSignature():Promise<string>;
 
@@ -119,6 +131,8 @@ export function SetRejectedExtensions(arg1:Array<string>):Promise<void>;
 
 export function SetTCPAcceptCooldownSeconds(arg1:number):Promise<void>;
 
+export function SetTheme(arg1:string):Promise<void>;
+
 export function SetUDPHelloCooldownSeconds(arg1:number):Promise<void>;
 
 export function SetWhitelistEnabled(arg1:boolean):Promise<void>;
@@ -128,6 +142,8 @@ export function Signature():Promise<string>;
 export function StashPastedImage(arg1:string,arg2:string):Promise<string>;
 
 export function TCPAcceptCooldownSeconds():Promise<number>;
+
+export function Theme():Promise<string>;
 
 export function UDPHelloCooldownSeconds():Promise<number>;
 

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dukto brand green — see theme.cpp Theme::DEFAULT_THEME_COLOR. -->
+    <color name="ic_launcher_background">#248B00</color>
+</resources>

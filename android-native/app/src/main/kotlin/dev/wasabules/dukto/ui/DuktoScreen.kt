@@ -1,6 +1,7 @@
 package dev.wasabules.dukto.ui
 
 import android.net.Uri
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -42,9 +43,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import dev.wasabules.dukto.ActivityEntry
 import dev.wasabules.dukto.InflightTransfer
 import dev.wasabules.dukto.Profile
@@ -68,6 +74,10 @@ fun DuktoScreen(
     inflight: InflightTransfer?,
     pendingShare: List<Uri>,
     pendingPeerRequests: List<PendingRequest>,
+    avatarBytes: ByteArray,
+    hasCustomAvatar: Boolean,
+    onPickAvatar: () -> Unit,
+    onClearAvatar: () -> Unit,
     onBuddyNameChange: (String) -> Unit,
     onPickDestFolder: () -> Unit,
     onClearDestFolder: () -> Unit,
@@ -78,6 +88,9 @@ fun DuktoScreen(
     onUnblockPeer: (String) -> Unit,
     onForgetApprovals: () -> Unit,
     onClearAudit: () -> Unit,
+    onMaxActivityChange: (Int) -> Unit,
+    onClearActivity: () -> Unit,
+    onThemeModeChange: (dev.wasabules.dukto.settings.ThemeMode) -> Unit,
     onResolvePeerRequest: (String, PeerChoice) -> Unit,
     onSendText: (Peer, String) -> Unit,
     onSendFiles: (Peer) -> Unit,
@@ -92,6 +105,25 @@ fun DuktoScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Dukto Native") },
+                navigationIcon = {
+                    Box(
+                        modifier = Modifier
+                            .padding(start = 12.dp)
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                    ) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(avatarBytes)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = "Your avatar",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                },
                 actions = {
                     if (!settings.receivingEnabled) {
                         Text(
@@ -156,6 +188,10 @@ fun DuktoScreen(
                 destLabel = destLabel,
                 settings = settings,
                 audit = audit,
+                avatarBytes = avatarBytes,
+                hasCustomAvatar = hasCustomAvatar,
+                onPickAvatar = onPickAvatar,
+                onClearAvatar = onClearAvatar,
                 onBuddyNameChange = onBuddyNameChange,
                 onPickDestFolder = onPickDestFolder,
                 onClearDestFolder = onClearDestFolder,
@@ -166,6 +202,10 @@ fun DuktoScreen(
                 onUnblockPeer = onUnblockPeer,
                 onForgetApprovals = onForgetApprovals,
                 onClearAudit = onClearAudit,
+                activityCount = activity.size,
+                onMaxActivityChange = onMaxActivityChange,
+                onClearActivity = onClearActivity,
+                onThemeModeChange = onThemeModeChange,
                 onDismiss = { settingsOpen = false },
             )
         }
@@ -203,7 +243,7 @@ private fun PeerRow(peer: Peer, onClick: () -> Unit) {
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Avatar(seedText = peer.signature)
+            PeerAvatar(peer)
             Spacer(Modifier.size(16.dp))
             Column(Modifier.weight(1f)) {
                 Text(peer.signature, style = MaterialTheme.typography.titleMedium)
@@ -214,6 +254,44 @@ private fun PeerRow(peer: Peer, onClick: () -> Unit) {
                 )
             }
         }
+    }
+}
+
+/**
+ * Peer's avatar tile: try to fetch their HTTP side-channel
+ * (`http://<peer>:<port+1>/dukto/avatar`); fall back to a deterministic
+ * initials tile while loading, on network failure, or if the peer doesn't
+ * run the avatar endpoint.
+ *
+ * The initials layer underneath stays visible until Coil flips the
+ * AsyncImage on top — gives a smooth "initials → photo" transition with no
+ * empty frame.
+ */
+@Composable
+private fun PeerAvatar(peer: Peer) {
+    val avatarPort = peer.port + 1
+    val url = "http://${peer.address.hostAddress}:$avatarPort/dukto/avatar"
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Avatar(seedText = peer.signature)
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(url)
+                // Re-fetch when the peer renames themselves (proxy for
+                // "they may have changed their avatar"). Without this,
+                // Coil's URL cache keeps serving the stale image.
+                .memoryCacheKey("avatar:${peer.address.hostAddress}:$avatarPort:${peer.signature}")
+                .diskCacheKey("avatar:${peer.address.hostAddress}:$avatarPort:${peer.signature}")
+                .crossfade(true)
+                .build(),
+            contentDescription = "${peer.signature} avatar",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
     }
 }
 
@@ -240,13 +318,6 @@ private fun Avatar(seedText: String) {
 @Composable
 private fun ActivityRow(entry: ActivityEntry, onClick: () -> Unit) {
     val time = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(entry.at))
-    val (title, body) = when (entry) {
-        is ActivityEntry.TextReceived -> "Text from ${entry.from}" to entry.text
-        is ActivityEntry.FilesReceived ->
-            "${entry.fileCount} file(s) from ${entry.from}" to entry.location
-        is ActivityEntry.Sent -> "Sent ${formatBytes(entry.bytes)} to ${entry.to}" to ""
-        is ActivityEntry.Error -> "Error: ${entry.peer}" to entry.message
-    }
     val tappable = entry is ActivityEntry.TextReceived || entry is ActivityEntry.FilesReceived
     Card(
         modifier = Modifier
@@ -256,12 +327,13 @@ private fun ActivityRow(entry: ActivityEntry, onClick: () -> Unit) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
         Column(Modifier.padding(12.dp)) {
+            // Header: title + time. Same shape for every entry kind.
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    title,
+                    text = activityTitle(entry),
                     style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
@@ -269,13 +341,157 @@ private fun ActivityRow(entry: ActivityEntry, onClick: () -> Unit) {
                 )
                 Text(time, style = MaterialTheme.typography.labelSmall)
             }
-            if (body.isNotEmpty()) {
-                Spacer(Modifier.height(4.dp))
-                Text(body, style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis)
+
+            when (entry) {
+                is ActivityEntry.TextReceived -> {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        entry.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                is ActivityEntry.FilesReceived -> {
+                    Spacer(Modifier.height(8.dp))
+                    FilesReceivedBody(entry)
+                }
+                is ActivityEntry.Sent -> Unit
+                is ActivityEntry.Error -> {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        entry.message,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
 }
+
+private fun activityTitle(entry: ActivityEntry): String = when (entry) {
+    is ActivityEntry.TextReceived -> "Text from ${entry.from}"
+    is ActivityEntry.FilesReceived -> "${entry.fileCount} file(s) from ${entry.from}"
+    is ActivityEntry.Sent -> "Sent ${formatBytes(entry.bytes)} to ${entry.to}"
+    is ActivityEntry.Error -> "Error: ${entry.peer}"
+}
+
+/** Shows up to [INLINE_FILE_LIMIT] files with thumbnail + name + size. Tap a
+ *  row to open that file in the system viewer; tap the surrounding card to
+ *  jump to the full preview screen. */
+@Composable
+private fun FilesReceivedBody(entry: ActivityEntry.FilesReceived) {
+    val visibleUris = entry.fileUris.take(INLINE_FILE_LIMIT)
+    val ctx = LocalContext.current
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        visibleUris.forEach { u ->
+            FileMetaRow(
+                uri = u,
+                onTap = { meta -> openInExternalViewer(ctx, meta) },
+            )
+        }
+        val remaining = entry.fileUris.size - visibleUris.size
+        if (remaining > 0) {
+            Text(
+                "+ $remaining more — tap to view all",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else if (entry.fileUris.isEmpty()) {
+            // Pre-Coil entries (or sessions with no captured URIs) — fall back
+            // to showing the destination so the user still has a pointer.
+            Text(
+                entry.location,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun FileMetaRow(uri: String, onTap: (FileMeta) -> Unit) {
+    val meta = rememberFileMeta(uri)
+    if (meta == null) {
+        Text(
+            uri,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        return
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onTap(meta) },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (meta.isImage) {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(meta.uri)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = meta.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Text(genericFileEmoji(meta.mime), style = MaterialTheme.typography.titleMedium)
+            }
+        }
+        Spacer(Modifier.size(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                meta.name,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                listOfNotNull(formatBytesShort(meta.size), meta.mime).joinToString(" · "),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+private fun genericFileEmoji(mime: String?): String = when {
+    mime == null -> "📄"
+    mime.startsWith("video/") -> "🎬"
+    mime.startsWith("audio/") -> "🎵"
+    mime.startsWith("text/") -> "📝"
+    mime == "application/pdf" -> "📕"
+    mime.startsWith("application/zip") || mime.contains("compressed") -> "🗜"
+    else -> "📄"
+}
+
+private fun openInExternalViewer(ctx: android.content.Context, meta: FileMeta) {
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(meta.uri, meta.mime ?: "*/*")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    runCatching { ctx.startActivity(Intent.createChooser(intent, "Open with")) }
+}
+
+private const val INLINE_FILE_LIMIT = 5
 
 @Composable
 private fun TransferBar(t: InflightTransfer, onCancel: () -> Unit) {

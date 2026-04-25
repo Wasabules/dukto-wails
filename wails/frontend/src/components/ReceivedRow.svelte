@@ -108,7 +108,7 @@
 <style>
   li {
     padding: 8px 0;
-    border-bottom: 1px solid #f1f5f9;
+    border-bottom: 1px solid var(--code-bg);
     display: grid;
     grid-template-columns: 88px 1fr;
     gap: 12px;
@@ -119,7 +119,7 @@
     width: 88px;
     height: 88px;
     border-radius: 6px;
-    background: #f1f5f9;
+    background: var(--code-bg);
     overflow: hidden;
     display: flex;
     align-items: center;
@@ -127,13 +127,13 @@
     position: relative;
     flex-shrink: 0;
     padding: 0;
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--panel-border);
   }
   button.thumb {
     cursor: pointer;
   }
   button.thumb:hover {
-    border-color: #94a3b8;
+    border-color: var(--text-faint);
   }
   .thumb img,
   .thumb video {
@@ -153,7 +153,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #fff;
+    color: var(--panel-bg);
     font-size: 1.6rem;
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
     background: rgba(0, 0, 0, 0.15);
@@ -180,8 +180,8 @@
   blockquote {
     margin: 0;
     padding: 4px 8px;
-    border-left: 3px solid #cbd5e1;
-    color: #334155;
+    border-left: 3px solid var(--input-border);
+    color: var(--text);
     white-space: pre-wrap;
     overflow: hidden;
     display: -webkit-box;
@@ -191,7 +191,7 @@
   }
   code {
     font-size: 0.8rem;
-    color: #475569;
+    color: var(--text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -212,16 +212,16 @@
     font-size: 0.7rem;
     padding: 2px 6px;
     border-radius: 10px;
-    background: #e2e8f0;
+    background: var(--panel-border);
     text-transform: uppercase;
   }
   time {
     font-size: 0.75rem;
-    color: #94a3b8;
+    color: var(--text-faint);
   }
   .hash {
     font-size: 0.7rem;
-    color: #64748b;
+    color: var(--text-dim);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -233,12 +233,12 @@
     line-height: 1;
     border-radius: 4px;
     cursor: pointer;
-    border: 1px solid #2563eb;
-    background: #2563eb;
-    color: #fff;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: var(--accent-on);
   }
   .mini.ghost {
     background: transparent;
-    color: #2563eb;
+    color: var(--accent);
   }
 </style>

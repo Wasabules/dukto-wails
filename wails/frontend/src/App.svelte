@@ -33,6 +33,15 @@
     peerKey,
     peers as fetchPeers,
     pickDestDir,
+    pickFilesToSend,
+    pickFolderToSend,
+    localAvatarDataURL,
+    pickAndSetCustomAvatar,
+    clearCustomAvatar,
+    hasCustomAvatar,
+    getTheme,
+    setTheme as rpcSetTheme,
+    type ThemeMode,
     pickExportPath,
     qrCodeSignature,
     receivingEnabled as fetchReceivingEnabled,
@@ -165,6 +174,79 @@
   function invalidateQr() {
     qrData = null;
     if (settingsOpen) void loadQrCode();
+    // The QR encodes the signature; if the signature changed, the avatar
+    // initials likely changed too. Bump the cache-bust so the <img> reloads.
+    void refreshAvatarState();
+  }
+
+  // Self-avatar URL goes through the AssetServer proxy (/avatar/me) so
+  // the WebView treats it as same-origin (no mixed-content blocking by
+  // WebKitGTK). Cache-bust bumps on rename / pick / reset to force reload.
+  let avatarBust = 0;
+  let customAvatarSet = false;
+  $: selfAvatarUrl = `/avatar/me.png?v=${encodeURIComponent(mySig)}-${avatarBust}`;
+  async function refreshAvatarState() {
+    try {
+      customAvatarSet = await hasCustomAvatar();
+    } catch (e) {
+      customAvatarSet = false;
+    }
+    avatarBust += 1;
+  }
+  async function pickCustomAvatar() {
+    try {
+      const out = await pickAndSetCustomAvatar();
+      if (out) {
+        customAvatarSet = true;
+        avatarBust += 1;
+        showToast('Avatar updated.');
+      }
+    } catch (e) {
+      showToast(`Avatar pick failed: ${e}`);
+    }
+  }
+  async function clearAvatar() {
+    try {
+      await clearCustomAvatar();
+      customAvatarSet = false;
+      avatarBust += 1;
+      showToast('Avatar reset to initials.');
+    } catch (e) {
+      showToast(`Avatar reset failed: ${e}`);
+    }
+  }
+
+  // Theme override (system / light / dark). Resolves "system" against the
+  // OS pref via window.matchMedia, then writes a class on <html> so global
+  // CSS rules (defined in style.css) flip the surface colours.
+  let themeMode: ThemeMode = 'system';
+  async function loadTheme() {
+    try {
+      themeMode = await getTheme();
+    } catch (e) {
+      themeMode = 'system';
+    }
+    applyTheme();
+  }
+  async function changeTheme(mode: ThemeMode) {
+    themeMode = mode;
+    applyTheme();
+    try { await rpcSetTheme(mode); } catch (e) { showToast(`Theme save failed: ${e}`); }
+  }
+  function applyTheme() {
+    const root = document.documentElement;
+    const dark =
+      themeMode === 'dark' ||
+      (themeMode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    root.classList.toggle('theme-dark', dark);
+    root.classList.toggle('theme-light', !dark);
+  }
+  // Re-evaluate when the OS pref flips and we're in "system" mode.
+  if (typeof window !== 'undefined' && window.matchMedia) {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    mq.addEventListener?.('change', () => {
+      if (themeMode === 'system') applyTheme();
+    });
   }
 
   function peerLabel(p: Peer): string {
@@ -177,6 +259,8 @@
   let unwire: (() => void) | null = null;
 
   onMount(async () => {
+    void refreshAvatarState();
+    void loadTheme();
     let initialReceiving = true;
     [
       mySig, myBuddy, myDest, notifyOn, trayOn, myAddrs,
@@ -221,6 +305,16 @@
     } catch (e) {
       console.warn('dukto: failed to load history', e);
     }
+
+    // WebKitGTK navigates to a dropped file by default (image opens in-app,
+    // text file replaces the page, …). The native Wails handler at the GTK
+    // signal layer extracts the paths and emits 'file:drop' before the
+    // browser's default kicks in, so we just need to swallow the JS-level
+    // events to suppress the navigation. preventDefault on dragover is
+    // also required for drop to fire reliably across browser engines.
+    const swallowDefault = (e: Event) => e.preventDefault();
+    window.addEventListener('dragover', swallowDefault);
+    window.addEventListener('drop', swallowDefault);
 
     unwire = wireEvents(({ paths, x, y }) => {
       if (!paths || paths.length === 0) return;
@@ -721,6 +815,46 @@
     draggedFiles = [];
   }
 
+  /** Merge new paths into the queue, dedup by absolute path. Used by both
+   *  the drop handler and the Pick file(s) / Pick folder buttons. */
+  function enqueuePaths(paths: string[]): number {
+    if (!paths || paths.length === 0) return 0;
+    const seen = new Set(draggedFiles);
+    const merged = draggedFiles.slice();
+    let added = 0;
+    for (const p of paths) {
+      if (!seen.has(p)) {
+        seen.add(p);
+        merged.push(p);
+        added++;
+      }
+    }
+    if (added > 0) draggedFiles = merged;
+    return added;
+  }
+
+  async function pickAndQueueFiles() {
+    try {
+      const paths = await pickFilesToSend();
+      if (paths.length === 0) return;
+      const added = enqueuePaths(paths);
+      if (added > 0) showToast(`Queued ${added} item(s).`);
+    } catch (e) {
+      showToast(`Pick files failed: ${e}`);
+    }
+  }
+
+  async function pickAndQueueFolder() {
+    try {
+      const path = await pickFolderToSend();
+      if (!path) return;
+      const added = enqueuePaths([path]);
+      if (added > 0) showToast(`Queued folder ${path}.`);
+    } catch (e) {
+      showToast(`Pick folder failed: ${e}`);
+    }
+  }
+
   async function openReceived(path: string) {
     try {
       await openPath(path);
@@ -793,6 +927,7 @@
     signature={mySig}
     addresses={myAddrs}
     receivingEnabled={$receiving}
+    avatarUrl={selfAvatarUrl}
     onToggleReceiving={toggleReceiving}
     onOpenSettings={() => (settingsOpen = !settingsOpen)}
   />
@@ -828,6 +963,8 @@
     onSendFilesBroadcast={sendFilesBroadcast}
     onRemoveQueued={removeQueued}
     onClearQueued={clearQueued}
+    onPickFiles={pickAndQueueFiles}
+    onPickFolder={pickAndQueueFolder}
     onComposeTextChange={(v) => (composeText = v)}
     onComposePaste={onComposePaste}
   />
@@ -878,6 +1015,12 @@
       onBuddyNameChange={(v) => (myBuddy = v)}
       onCommitBuddyName={commitBuddyName}
       onPickDest={pickDest}
+      avatarUrl={selfAvatarUrl}
+      hasCustomAvatar={customAvatarSet}
+      {themeMode}
+      onThemeModeChange={changeTheme}
+      onPickAvatar={pickCustomAvatar}
+      onClearAvatar={clearAvatar}
       onToggleNotifications={toggleNotifications}
       onToggleTray={toggleTray}
       onToggleWhitelist={toggleWhitelist}

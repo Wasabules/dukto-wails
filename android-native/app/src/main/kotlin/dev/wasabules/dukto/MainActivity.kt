@@ -17,7 +17,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import androidx.compose.foundation.isSystemInDarkTheme
 import dev.wasabules.dukto.discovery.Peer
+import dev.wasabules.dukto.settings.ThemeMode
 import dev.wasabules.dukto.ui.DuktoScreen
 import dev.wasabules.dukto.ui.PreviewScreen
 import dev.wasabules.dukto.ui.theme.DuktoTheme
@@ -59,6 +61,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val pickAvatarImage = registerForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri: Uri? ->
+        if (uri != null) {
+            runCatching { engine.setCustomAvatar(uri) }
+                .onFailure { android.widget.Toast.makeText(this, "Avatar: ${it.message}", android.widget.Toast.LENGTH_SHORT).show() }
+        }
+    }
+
     private val askNotificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { /* OS retains the answer */ }
@@ -70,8 +81,17 @@ class MainActivity : ComponentActivity() {
         handleShareIntent(intent)
 
         setContent {
-            DuktoTheme {
-                val settingsState by engine.settingsFlow.collectAsState()
+            val settingsState by engine.settingsFlow.collectAsState()
+            // Resolve "follow system / force light / force dark" against the
+            // current activity configuration. isSystemInDarkTheme() is itself
+            // composable so it stays reactive to OS-level dark mode toggles.
+            val systemDark = isSystemInDarkTheme()
+            val effectiveDark = when (settingsState.themeMode) {
+                ThemeMode.System -> systemDark
+                ThemeMode.Light -> false
+                ThemeMode.Dark -> true
+            }
+            DuktoTheme(darkTheme = effectiveDark) {
                 val auditEntries by engine.audit.entries.collectAsState()
                 val peers by engine.peers.collectAsState()
                 val activity by engine.activity.collectAsState()
@@ -79,6 +99,8 @@ class MainActivity : ComponentActivity() {
                 val profile by engine.profile.collectAsState()
                 val destLabel by engine.destLabel.collectAsState()
                 val pendingRequests by engine.pendingPeerRequests.collectAsState()
+                val avatarBytes by engine.avatarBytes.collectAsState()
+                val hasCustomAvatar by engine.hasCustomAvatar.collectAsState()
 
                 var pendingShare by remember { mutableStateOf<List<Uri>>(emptyList()) }
                 LaunchedEffect(Unit) { pendingShare = consumeSharedUris() }
@@ -99,6 +121,10 @@ class MainActivity : ComponentActivity() {
                         inflight = inflight,
                         pendingShare = pendingShare,
                         pendingPeerRequests = pendingRequests,
+                        avatarBytes = avatarBytes,
+                        hasCustomAvatar = hasCustomAvatar,
+                        onPickAvatar = { pickAvatarImage.launch(arrayOf("image/*")) },
+                        onClearAvatar = { engine.clearCustomAvatar() },
                         onBuddyNameChange = engine::setBuddyName,
                         onPickDestFolder = { pickDestTree.launch(null) },
                         onClearDestFolder = { engine.setDestTreeUri(null) },
@@ -109,6 +135,9 @@ class MainActivity : ComponentActivity() {
                         onUnblockPeer = engine::unblockPeer,
                         onForgetApprovals = engine::forgetApprovals,
                         onClearAudit = engine::clearAuditLog,
+                        onMaxActivityChange = engine::setMaxActivityEntries,
+                        onClearActivity = engine::clearActivity,
+                        onThemeModeChange = engine::setThemeMode,
                         onResolvePeerRequest = engine::resolvePeerRequest,
                         onSendText = { peer, text ->
                             engine.sendText(peer.address.hostAddress.orEmpty(), peer.port, text)

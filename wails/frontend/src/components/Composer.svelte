@@ -23,6 +23,8 @@
   export let onSendFilesBroadcast: () => void = () => {};
   export let onRemoveQueued: (path: string) => void = () => {};
   export let onClearQueued: () => void = () => {};
+  export let onPickFiles: () => void = () => {};
+  export let onPickFolder: () => void = () => {};
   export let onComposeTextChange: (text: string) => void = () => {};
   export let onComposePaste: (event: ClipboardEvent) => void = () => {};
 
@@ -46,7 +48,7 @@
     </p>
     <div class="dropzone" class:has-items={draggedFiles.length > 0}>
       {#if draggedFiles.length === 0}
-        <p>Drop files here, then click Send to fan out.</p>
+        <p>Drop files here, or use the buttons below, then click Send to fan out.</p>
       {:else}
         <ul class="queued">
           {#each draggedFiles as path (path)}
@@ -58,6 +60,10 @@
           {/each}
         </ul>
       {/if}
+      <div class="picker-row">
+        <button class="ghost" type="button" on:click={onPickFiles}>Pick file(s)</button>
+        <button class="ghost" type="button" on:click={onPickFolder}>Pick folder</button>
+      </div>
     </div>
     <div class="row">
       <button
@@ -91,7 +97,7 @@
 
     <div class="dropzone" class:has-items={draggedFiles.length > 0}>
       {#if draggedFiles.length === 0}
-        <p>Drop files or folders here to queue them — or drop directly onto a peer to send immediately.</p>
+        <p>Drop files or folders here, use the buttons below, or drop directly onto a peer to send immediately.</p>
       {:else}
         <ul class="queued">
           {#each draggedFiles as path (path)}
@@ -103,6 +109,10 @@
           {/each}
         </ul>
       {/if}
+      <div class="picker-row">
+        <button class="ghost" type="button" on:click={onPickFiles}>Pick file(s)</button>
+        <button class="ghost" type="button" on:click={onPickFolder}>Pick folder</button>
+      </div>
     </div>
     <div class="row">
       <button on:click={onSendFiles} disabled={draggedFiles.length === 0}>Send {draggedFiles.length || ''} item(s)</button>
@@ -118,8 +128,8 @@
 <style>
   section.compose {
     grid-area: compose;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
     border-radius: 6px;
     padding: 10px 14px;
     overflow: auto;
@@ -129,16 +139,16 @@
     font-size: 0.9rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #475569;
+    color: var(--text);
   }
   .empty {
-    color: #94a3b8;
+    color: var(--text-faint);
     font-size: 0.9rem;
   }
   label {
     display: block;
     font-size: 0.85rem;
-    color: #334155;
+    color: var(--text);
     margin: 8px 0;
   }
   textarea {
@@ -146,15 +156,17 @@
     box-sizing: border-box;
     font: inherit;
     padding: 6px 8px;
-    border: 1px solid #cbd5e1;
+    border: 1px solid var(--input-border);
     border-radius: 4px;
+      background-color: var(--input-bg);
+      color: var(--text);
   }
   button {
     padding: 6px 12px;
     font: inherit;
-    border: 1px solid #2563eb;
-    background: #2563eb;
-    color: #fff;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: var(--accent-on);
     border-radius: 4px;
     cursor: pointer;
   }
@@ -171,32 +183,46 @@
     padding: 0 6px;
     font-size: 0.9rem;
     line-height: 1;
-    background: #94a3b8;
-    border-color: #94a3b8;
+    background: var(--text-faint);
+    border-color: var(--text-faint);
   }
   .ghost {
     background: transparent;
-    color: #2563eb;
+    color: var(--accent);
   }
   .dropzone {
     --wails-drop-target: drop;
     margin: 8px 0;
     padding: 12px;
-    border: 2px dashed #cbd5e1;
+    border: 2px dashed var(--input-border);
     border-radius: 6px;
-    background: #f8fafc;
-    color: #64748b;
+    background: var(--panel-bg-2);
+    color: var(--text-dim);
     font-size: 0.9rem;
     min-height: 70px;
   }
   .dropzone.has-items {
     border-style: solid;
-    background: #eef2ff;
-    color: #1e293b;
+    background: var(--accent-soft);
+    color: var(--text-strong);
   }
   .dropzone p {
     margin: 0;
     text-align: center;
+  }
+  .picker-row {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    margin-top: 8px;
+    /* Stop the picker buttons from claiming the drop event — drops should
+       still flow to the dropzone container, not get swallowed mid-button. */
+    pointer-events: auto;
+  }
+  .picker-row button {
+    /* Compact, subtle — these are alternatives to the primary action. */
+    padding: 4px 12px;
+    font-size: 0.85rem;
   }
   .queued {
     list-style: none;
@@ -214,7 +240,7 @@
   .queued code {
     flex: 1;
     font-size: 0.8rem;
-    color: #334155;
+    color: var(--text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -225,9 +251,9 @@
     text-align: center;
   }
   .dropzone:global(.wails-drop-target-active) {
-    border-color: #2563eb;
+    border-color: var(--accent);
     border-style: solid;
-    background: #eff6ff;
-    color: #1e293b;
+    background: var(--accent-soft);
+    color: var(--text-strong);
   }
 </style>

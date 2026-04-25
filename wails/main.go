@@ -32,18 +32,15 @@ func main() {
 			// can render <img>/<video>/<audio> previews of received content.
 			Handler: http.HandlerFunc(app.serveFile),
 		},
-		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
+		// Dukto's canonical green (#248b00). The window flashes this colour
+		// for the brief moment between window creation and the SPA painting
+		// over it — match the brand bar instead of leaving a dark navy stub.
+		BackgroundColour: &options.RGBA{R: 0x24, G: 0x8B, B: 0x00, A: 0xFF},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
 		OnBeforeClose:    app.onBeforeClose,
 		DragAndDrop: &options.DragAndDrop{
 			EnableFileDrop: true,
-			// On Linux/WebKitGTK, the WebView handles file drops first and
-			// navigates to the dropped file (e.g. opens an image in-app)
-			// before Wails sees the event. DisableWebViewDrop pulls drop
-			// handling up to the GTK window so Wails can extract the paths
-			// and forward them via OnFileDrop. No-op on Windows/macOS.
-			DisableWebViewDrop: true,
 		},
 		SingleInstanceLock: &options.SingleInstanceLock{
 			// Arbitrary but stable UUID: the lock's job is to match sibling

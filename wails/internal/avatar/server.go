@@ -161,6 +161,17 @@ func (s *Server) data() ([]byte, error) {
 	return fresh, nil
 }
 
+// BytesRenderer returns a Renderer that serves a fixed PNG payload — useful
+// when the user has uploaded a custom avatar that should override the default
+// initials tile. The bytes are returned verbatim each call.
+func BytesRenderer(data []byte) Renderer {
+	// Defensive copy so subsequent in-place mutations of the input slice
+	// don't corrupt the served bytes.
+	cp := make([]byte, len(data))
+	copy(cp, data)
+	return func() ([]byte, error) { return cp, nil }
+}
+
 // DefaultRenderer returns a Renderer that produces a 64×64 PNG with a solid
 // background derived from identity (usually the signature string), plus two
 // initials drawn as simple block-shaped glyphs.

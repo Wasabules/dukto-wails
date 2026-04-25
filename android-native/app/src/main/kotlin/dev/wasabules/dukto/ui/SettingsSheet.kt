@@ -1,13 +1,18 @@
 package dev.wasabules.dukto.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -27,11 +32,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import dev.wasabules.dukto.Profile
 import dev.wasabules.dukto.audit.AuditLog
 import dev.wasabules.dukto.settings.Settings
+import dev.wasabules.dukto.settings.ThemeMode
 import java.text.DateFormat
 import java.util.Date
 
@@ -42,6 +53,10 @@ fun SettingsSheet(
     destLabel: String,
     settings: Settings,
     audit: List<AuditLog.Entry>,
+    avatarBytes: ByteArray,
+    hasCustomAvatar: Boolean,
+    onPickAvatar: () -> Unit,
+    onClearAvatar: () -> Unit,
     onBuddyNameChange: (String) -> Unit,
     onPickDestFolder: () -> Unit,
     onClearDestFolder: () -> Unit,
@@ -52,6 +67,10 @@ fun SettingsSheet(
     onUnblockPeer: (String) -> Unit,
     onForgetApprovals: () -> Unit,
     onClearAudit: () -> Unit,
+    activityCount: Int,
+    onMaxActivityChange: (Int) -> Unit,
+    onClearActivity: () -> Unit,
+    onThemeModeChange: (ThemeMode) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -61,6 +80,9 @@ fun SettingsSheet(
     }
     var maxSize by remember(settings.maxSessionSizeMB) {
         mutableStateOf(if (settings.maxSessionSizeMB == 0) "" else settings.maxSessionSizeMB.toString())
+    }
+    var maxActivity by remember(settings.maxActivityEntries) {
+        mutableStateOf(if (settings.maxActivityEntries == 0) "" else settings.maxActivityEntries.toString())
     }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
@@ -75,6 +97,13 @@ fun SettingsSheet(
 
             // — Profile
             Section("Profile") {
+                AvatarRow(
+                    bytes = avatarBytes,
+                    hasCustom = hasCustomAvatar,
+                    onPick = onPickAvatar,
+                    onClear = onClearAvatar,
+                )
+                Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -83,6 +112,21 @@ fun SettingsSheet(
                     singleLine = true,
                 )
                 Hint("Empty = use the device name. Changes take effect on the next discovery broadcast.")
+            }
+
+            // — Appearance
+            Section("Appearance") {
+                Text(
+                    "Theme",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ThemeModeChip("System", settings.themeMode == ThemeMode.System) { onThemeModeChange(ThemeMode.System) }
+                    ThemeModeChip("Light", settings.themeMode == ThemeMode.Light) { onThemeModeChange(ThemeMode.Light) }
+                    ThemeModeChip("Dark", settings.themeMode == ThemeMode.Dark) { onThemeModeChange(ThemeMode.Dark) }
+                }
+                Hint("System follows your device's dark/light mode. Light/Dark force a specific theme regardless of the system setting.")
             }
 
             // — Destination
@@ -170,6 +214,33 @@ fun SettingsSheet(
                 }
             }
 
+            // — Recent activity
+            Section("Recent activity") {
+                Text(
+                    "$activityCount entr${if (activityCount == 1) "y" else "ies"} kept",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = maxActivity,
+                    onValueChange = {
+                        maxActivity = it.filter { c -> c.isDigit() }
+                        onMaxActivityChange(maxActivity.toIntOrNull() ?: 0)
+                    },
+                    label = { Text("Max entries") },
+                    placeholder = { Text("0 = unlimited") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+                Hint("Older entries are dropped first when the cap is reached.")
+                Spacer(Modifier.height(8.dp))
+                TextButton(
+                    onClick = onClearActivity,
+                    enabled = activityCount > 0,
+                ) { Text("Clear recent activity") }
+            }
+
             // — Audit
             Section("Audit log") {
                 if (audit.isEmpty()) {
@@ -237,6 +308,66 @@ private fun Hint(text: String) {
     Spacer(Modifier.height(4.dp))
     Text(
         text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/** Compact toggle button for the theme triplet. Material 3's FilterChip felt
+ *  too heavy here — these need to fit on one line on phones in portrait. */
+@Composable
+private fun ThemeModeChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    if (selected) {
+        Button(onClick = onClick) { Text(label) }
+    } else {
+        OutlinedButton(onClick = onClick) { Text(label) }
+    }
+}
+
+@Composable
+private fun AvatarRow(
+    bytes: ByteArray,
+    hasCustom: Boolean,
+    onPick: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center,
+        ) {
+            // Coil's data() handles ByteArray directly. The PNG bytes are
+            // re-keyed on every change (clearing the StateFlow → new array
+            // identity → fresh request), so previous custom uploads don't
+            // linger in the in-memory cache.
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(bytes)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = "Your avatar",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        Spacer(Modifier.size(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Button(onClick = onPick) { Text("Pick image…") }
+            if (hasCustom) {
+                Spacer(Modifier.height(4.dp))
+                TextButton(onClick = onClear) { Text("Reset to initials") }
+            }
+        }
+    }
+    Spacer(Modifier.height(4.dp))
+    Text(
+        if (hasCustom)
+            "Custom image — peers fetch it via the avatar HTTP endpoint."
+        else
+            "Auto-generated from your buddy name. Pick a PNG / JPEG / GIF / WebP to override.",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )

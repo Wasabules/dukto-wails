@@ -218,6 +218,11 @@ func DefaultPath() (string, error) {
 	return filepath.Join(dir, "dukto", fileName), nil
 }
 
+// Path returns the absolute path of the JSON file backing this Store. Useful
+// for callers that want to colocate auxiliary data (e.g. avatar.png) next to
+// settings.json without re-running DefaultPath().
+func (s *Store) Path() string { return s.path }
+
 // Values returns a snapshot of the current settings. Safe for concurrent use
 // because it returns a value copy.
 func (s *Store) Values() Values {

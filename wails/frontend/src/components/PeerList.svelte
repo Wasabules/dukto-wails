@@ -126,8 +126,8 @@
 <style>
   section.peers {
     grid-area: peers;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
     border-radius: 6px;
     padding: 10px 14px;
     overflow: auto;
@@ -137,10 +137,10 @@
     font-size: 0.9rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #475569;
+    color: var(--text);
   }
   .empty {
-    color: #94a3b8;
+    color: var(--text-faint);
     font-size: 0.9rem;
   }
   ul {
@@ -169,23 +169,23 @@
     cursor: pointer;
   }
   .peer-btn:hover {
-    background: #f1f5f9;
+    background: var(--code-bg);
   }
   li.selected .peer-btn {
-    background: #dbeafe;
+    background: var(--accent-soft);
   }
   img {
     width: 40px;
     height: 40px;
     border-radius: 6px;
-    background: #cbd5e1;
+    background: var(--input-border);
   }
   .name {
     font-weight: 600;
   }
   .detail {
     font-size: 0.8rem;
-    color: #64748b;
+    color: var(--text-dim);
   }
   .peer-actions {
     position: absolute;
@@ -204,9 +204,9 @@
      the target, so the class isn't in the markup — :global() keeps the rule
      from being stripped as unused. */
   li:global(.wails-drop-target-active) {
-    outline: 2px dashed #2563eb;
+    outline: 2px dashed var(--accent);
     outline-offset: -2px;
-    background: #eff6ff;
+    background: var(--accent-soft);
   }
   .pick {
     width: 16px;
@@ -216,7 +216,7 @@
   .trust-badge {
     display: inline-block;
     margin-left: 4px;
-    color: #059669;
+    color: var(--accent-strong);
     font-weight: 700;
   }
   .peer-progress {
@@ -230,7 +230,7 @@
     overflow: hidden;
   }
   .peer-progress-fill {
-    background: #22d3ee;
+    background: var(--progress-bar);
     height: 100%;
     transition: width 120ms ease-out;
   }
@@ -243,7 +243,7 @@
   }
   .inline-toggle {
     font-size: 0.8rem;
-    color: #475569;
+    color: var(--text);
     display: flex;
     align-items: center;
     gap: 4px;
@@ -257,12 +257,12 @@
     line-height: 1;
     border-radius: 4px;
     cursor: pointer;
-    border: 1px solid #2563eb;
-    background: #2563eb;
-    color: #fff;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: var(--accent-on);
   }
   .mini.ghost {
     background: transparent;
-    color: #2563eb;
+    color: var(--accent);
   }
 </style>

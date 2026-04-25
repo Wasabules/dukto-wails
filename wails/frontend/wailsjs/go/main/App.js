@@ -46,6 +46,10 @@ export function ClearAudit() {
   return window['go']['main']['App']['ClearAudit']();
 }
 
+export function ClearCustomAvatar() {
+  return window['go']['main']['App']['ClearCustomAvatar']();
+}
+
 export function ClearHistory() {
   return window['go']['main']['App']['ClearHistory']();
 }
@@ -78,6 +82,10 @@ export function ForgetApprovedPeers() {
   return window['go']['main']['App']['ForgetApprovedPeers']();
 }
 
+export function HasCustomAvatar() {
+  return window['go']['main']['App']['HasCustomAvatar']();
+}
+
 export function History() {
   return window['go']['main']['App']['History']();
 }
@@ -92,6 +100,10 @@ export function LargeFileThresholdMB() {
 
 export function LocalAddresses() {
   return window['go']['main']['App']['LocalAddresses']();
+}
+
+export function LocalAvatarDataURL() {
+  return window['go']['main']['App']['LocalAvatarDataURL']();
 }
 
 export function ManualPeers() {
@@ -122,12 +134,24 @@ export function Peers() {
   return window['go']['main']['App']['Peers']();
 }
 
+export function PickAndSetCustomAvatar() {
+  return window['go']['main']['App']['PickAndSetCustomAvatar']();
+}
+
 export function PickDestDir() {
   return window['go']['main']['App']['PickDestDir']();
 }
 
 export function PickExportPath(arg1) {
   return window['go']['main']['App']['PickExportPath'](arg1);
+}
+
+export function PickFilesToSend() {
+  return window['go']['main']['App']['PickFilesToSend']();
+}
+
+export function PickFolderToSend() {
+  return window['go']['main']['App']['PickFolderToSend']();
 }
 
 export function QRCodeSignature() {
@@ -234,6 +258,10 @@ export function SetTCPAcceptCooldownSeconds(arg1) {
   return window['go']['main']['App']['SetTCPAcceptCooldownSeconds'](arg1);
 }
 
+export function SetTheme(arg1) {
+  return window['go']['main']['App']['SetTheme'](arg1);
+}
+
 export function SetUDPHelloCooldownSeconds(arg1) {
   return window['go']['main']['App']['SetUDPHelloCooldownSeconds'](arg1);
 }
@@ -252,6 +280,10 @@ export function StashPastedImage(arg1, arg2) {
 
 export function TCPAcceptCooldownSeconds() {
   return window['go']['main']['App']['TCPAcceptCooldownSeconds']();
+}
+
+export function Theme() {
+  return window['go']['main']['App']['Theme']();
 }
 
 export function UDPHelloCooldownSeconds() {

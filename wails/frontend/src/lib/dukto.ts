@@ -46,11 +46,14 @@ export function parseSignature(sig: string): ParsedSignature {
 }
 
 export function avatarUrl(peer: Peer): string {
-  // The avatar HTTP endpoint lives on the peer's UDP port + 1 by convention.
-  // Cache-bust on the signature so a rename is immediately visible.
+  // We can't fetch http://<peer>:4645/dukto/avatar directly: the WebView
+  // serves the page over the wails:// scheme and treats raw http:// as
+  // mixed-content, so the request is silently blocked. Route through the
+  // backend's AssetServer proxy (/avatar/peer/<ip>?port=N) which fetches
+  // it server-side and re-serves the bytes same-origin.
   const port = peer.port + 1;
   const bust = encodeURIComponent(peer.signature);
-  return `http://${peer.address}:${port}/dukto/avatar?v=${bust}`;
+  return `/avatar/peer/${peer.address}.png?port=${port}&v=${bust}`;
 }
 
 export function peerKey(peer: Peer): string {
@@ -64,6 +67,15 @@ export const signature = () => App.Signature();
 export const localAddresses = () => App.LocalAddresses() as Promise<string[]>;
 export const destDir = () => App.DestDir();
 export const pickDestDir = () => App.PickDestDir();
+export const pickFilesToSend = () => App.PickFilesToSend() as Promise<string[]>;
+export const pickFolderToSend = () => App.PickFolderToSend() as Promise<string>;
+export const localAvatarDataURL = () => App.LocalAvatarDataURL() as Promise<string>;
+export const pickAndSetCustomAvatar = () => App.PickAndSetCustomAvatar() as Promise<string>;
+export const clearCustomAvatar = () => App.ClearCustomAvatar();
+export const hasCustomAvatar = () => App.HasCustomAvatar() as Promise<boolean>;
+export type ThemeMode = 'system' | 'light' | 'dark';
+export const getTheme = () => App.Theme() as Promise<ThemeMode>;
+export const setTheme = (mode: ThemeMode) => App.SetTheme(mode);
 export const setDestDir = (dir: string) => App.SetDestDir(dir);
 export const buddyName = () => App.BuddyName();
 export const setBuddyName = (name: string) => App.SetBuddyName(name);

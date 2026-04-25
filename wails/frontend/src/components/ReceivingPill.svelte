@@ -34,22 +34,22 @@
     font-variant-numeric: tabular-nums;
   }
   .recv-pill.on {
-    background: #dcfce7;
-    color: #166534;
-    border-color: #86efac;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    border-color: var(--accent-soft-border);
   }
   .recv-pill.on:hover {
-    background: #bbf7d0;
-    border-color: #4ade80;
+    background: var(--accent-soft);
+    border-color: var(--accent-soft-border);
   }
   .recv-pill.off {
-    background: #fee2e2;
-    color: #991b1b;
-    border-color: #fca5a5;
+    background: var(--error-bg);
+    color: var(--error-strong);
+    border-color: var(--error-border);
   }
   .recv-pill.off:hover {
-    background: #fecaca;
-    border-color: #f87171;
+    background: var(--error-border);
+    border-color: var(--error);
   }
   .dot {
     width: 8px;

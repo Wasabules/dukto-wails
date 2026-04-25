@@ -81,7 +81,7 @@
   }
   .progress {
     background: rgba(15, 23, 42, 0.92);
-    color: #f8fafc;
+    color: var(--panel-bg-2);
     padding: 8px 12px;
     border-radius: 6px;
     font-size: 0.82rem;
@@ -101,7 +101,7 @@
     overflow: hidden;
   }
   .progress-fill {
-    background: #22d3ee;
+    background: var(--progress-bar);
     height: 100%;
     transition: width 120ms ease-out;
   }
@@ -112,16 +112,16 @@
   }
   .cancel-btn {
     align-self: center;
-    background: #dc2626;
-    border: 1px solid #dc2626;
-    color: #fff;
+    background: var(--error);
+    border: 1px solid var(--error);
+    color: var(--panel-bg);
     padding: 4px 12px;
     font-size: 0.8rem;
     border-radius: 4px;
     cursor: pointer;
   }
   .cancel-btn:hover {
-    background: #b91c1c;
-    border-color: #b91c1c;
+    background: var(--error);
+    border-color: var(--error);
   }
 </style>

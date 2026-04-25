@@ -368,6 +368,10 @@ private class DocumentSink(
     override fun close() {}
 
     private fun ensureDir(relPath: String): DocumentFile {
+        // Empty relPath means "the session root" — files sent without any
+        // wrapping directory (a desktop drop of a single file) hit this path.
+        if (relPath.isEmpty()) return sessionDoc
+
         val parts = sanitisePathSegments(relPath)
         val key = parts.joinToString("/")
         dirCache[key]?.let { return it }

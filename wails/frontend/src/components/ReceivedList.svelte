@@ -124,8 +124,8 @@
 <style>
   section.received {
     grid-area: received;
-    background: #ffffff;
-    border: 1px solid #e2e8f0;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
     border-radius: 6px;
     padding: 10px 14px;
     overflow: auto;
@@ -135,10 +135,10 @@
     font-size: 0.9rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #475569;
+    color: var(--text);
   }
   .empty {
-    color: #94a3b8;
+    color: var(--text-faint);
     font-size: 0.9rem;
   }
   ul {
@@ -155,16 +155,16 @@
     gap: 6px;
     width: 100%;
     padding: 4px 8px;
-    background: #f1f5f9;
+    background: var(--code-bg);
     border: 0;
     border-radius: 4px;
-    color: #334155;
+    color: var(--text);
     font-weight: 600;
     cursor: pointer;
     text-align: left;
   }
   .thread-head:hover {
-    background: #e2e8f0;
+    background: var(--panel-border);
   }
   .thread-caret {
     font-size: 0.75rem;
@@ -178,8 +178,8 @@
     font-size: 0.75rem;
     padding: 1px 8px;
     border-radius: 10px;
-    background: #cbd5e1;
-    color: #1e293b;
+    background: var(--input-border);
+    color: var(--text-strong);
     font-weight: 500;
   }
   .section-head {
@@ -201,8 +201,10 @@
     width: 140px;
     box-sizing: border-box;
     font-family: inherit;
-    border: 1px solid #cbd5e1;
+    border: 1px solid var(--input-border);
     border-radius: 4px;
+      background-color: var(--input-bg);
+      color: var(--text);
   }
   .mini {
     padding: 0 6px;
@@ -210,12 +212,12 @@
     line-height: 1;
     border-radius: 4px;
     cursor: pointer;
-    border: 1px solid #2563eb;
-    background: #2563eb;
-    color: #fff;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: var(--accent-on);
   }
   .mini.ghost {
     background: transparent;
-    color: #2563eb;
+    color: var(--accent);
   }
 </style>

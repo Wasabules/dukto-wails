@@ -36,6 +36,8 @@ class SettingsStore(context: Context) {
             putString(KEY_APPROVED_PEERS, next.approvedPeers.joinToString("\n"))
             putString(KEY_BLOCKED_EXT, next.blockedExtensions.joinToString(","))
             putInt(KEY_MAX_SIZE_MB, next.maxSessionSizeMB)
+            putInt(KEY_MAX_ACTIVITY, next.maxActivityEntries)
+            putString(KEY_THEME_MODE, next.themeMode.name)
         }
         _state.value = next
     }
@@ -59,6 +61,10 @@ class SettingsStore(context: Context) {
         blockedExtensions = prefs.getString(KEY_BLOCKED_EXT, DEFAULT_BLOCKED_EXT)
             ?.split(',')?.map { it.trim().lowercase() }?.filter { it.isNotEmpty() }.orEmpty().toSet(),
         maxSessionSizeMB = prefs.getInt(KEY_MAX_SIZE_MB, 0),
+        maxActivityEntries = prefs.getInt(KEY_MAX_ACTIVITY, DEFAULT_MAX_ACTIVITY),
+        themeMode = runCatching {
+            ThemeMode.valueOf(prefs.getString(KEY_THEME_MODE, ThemeMode.System.name).orEmpty())
+        }.getOrDefault(ThemeMode.System),
     )
 
     private companion object {
@@ -70,10 +76,13 @@ class SettingsStore(context: Context) {
         const val KEY_APPROVED_PEERS = "approved_peers"
         const val KEY_BLOCKED_EXT = "blocked_extensions"
         const val KEY_MAX_SIZE_MB = "max_session_size_mb"
+        const val KEY_MAX_ACTIVITY = "max_activity_entries"
+        const val KEY_THEME_MODE = "theme_mode"
         const val KEY_ACTIVITY_JSON = "activity_json"
 
         // Mirrors the Wails default; conservative against Windows-only nasties.
         const val DEFAULT_BLOCKED_EXT = "exe,bat,cmd,com,scr,msi,ps1,vbs,jse,lnk"
+        const val DEFAULT_MAX_ACTIVITY = 64
     }
 }
 
@@ -100,4 +109,13 @@ data class Settings(
     val approvedPeers: Set<String> = emptySet(),
     val blockedExtensions: Set<String> = emptySet(),
     val maxSessionSizeMB: Int = 0,
+    /**
+     * Hard cap on entries kept in the recent activity list (and persisted in
+     * SharedPreferences). 0 = unlimited; defaults to 64.
+     */
+    val maxActivityEntries: Int = 64,
+    /** UI theme override; SYSTEM = follow system, LIGHT/DARK = force. */
+    val themeMode: ThemeMode = ThemeMode.System,
 )
+
+enum class ThemeMode { System, Light, Dark }

@@ -49,16 +49,16 @@
     align-items: center;
     gap: 6px;
     padding: 4px 10px;
-    background: #f1f5f9;
-    color: #334155;
-    border: 1px solid #cbd5e1;
+    background: var(--code-bg);
+    color: var(--text);
+    border: 1px solid var(--input-border);
     border-radius: 999px;
     font-size: 0.8rem;
     cursor: pointer;
   }
   .addr-pill-btn:hover {
-    background: #e2e8f0;
-    border-color: #94a3b8;
+    background: var(--panel-border);
+    border-color: var(--text-faint);
   }
   .addr-pill-icon {
     font-size: 0.9rem;
@@ -72,8 +72,8 @@
     top: calc(100% + 6px);
     right: 0;
     min-width: 200px;
-    background: #fff;
-    border: 1px solid #cbd5e1;
+    background: var(--panel-bg);
+    border: 1px solid var(--input-border);
     border-radius: 6px;
     box-shadow: 0 8px 24px rgba(15, 23, 42, 0.15);
     padding: 10px 12px;
@@ -83,7 +83,7 @@
     font-size: 0.7rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #334155;
+    color: var(--text);
     margin-bottom: 4px;
   }
   .addr-pop ul {
@@ -94,9 +94,9 @@
   .addr-pop li {
     font-size: 0.85rem;
     padding: 2px 0;
-    color: #0f172a;
+    color: var(--text-strong);
   }
   .addr-pop code {
-    color: #0f172a;
+    color: var(--text-strong);
   }
 </style>

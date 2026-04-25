@@ -1,9 +1,14 @@
 package dev.wasabules.dukto
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import dev.wasabules.dukto.audit.AuditLog
 import dev.wasabules.dukto.avatar.AvatarServer
+import dev.wasabules.dukto.avatar.defaultAvatarPng
+import java.io.ByteArrayOutputStream
+import java.io.File
 import dev.wasabules.dukto.discovery.Messenger
 import dev.wasabules.dukto.discovery.Peer as DiscoveryPeer
 import dev.wasabules.dukto.platform.currentSignature
@@ -65,6 +70,32 @@ class DuktoEngine(private val app: Context) {
 
     val pendingPeerRequests: StateFlow<List<PendingRequest>> = policy.pending
 
+    // ── avatar (local + custom) ──────────────────────────────────────────────
+
+    private val avatarFile: File = File(app.filesDir, "avatar.png")
+
+    /** Latest avatar PNG bytes (custom override if set, otherwise generated
+     *  from the signature initials). Updated whenever the buddy name changes
+     *  or the user picks/clears a custom image. */
+    private val _avatarBytes = MutableStateFlow(loadCurrentAvatarBytes())
+    val avatarBytes: StateFlow<ByteArray> = _avatarBytes.asStateFlow()
+
+    /** True iff [avatarFile] exists — drives "Reset to initials" visibility. */
+    private val _hasCustomAvatar = MutableStateFlow(avatarFile.exists())
+    val hasCustomAvatar: StateFlow<Boolean> = _hasCustomAvatar.asStateFlow()
+
+    private fun loadCurrentAvatarBytes(): ByteArray {
+        if (avatarFile.exists()) {
+            runCatching { return avatarFile.readBytes() }
+        }
+        return defaultAvatarPng(currentSignature(app, settings.state.value.buddyName))
+    }
+
+    private fun refreshAvatarBytes() {
+        _avatarBytes.value = loadCurrentAvatarBytes()
+        _hasCustomAvatar.value = avatarFile.exists()
+    }
+
     val messenger: Messenger = Messenger(
         context = app,
         signatureProvider = { currentSignature(app, settings.state.value.buddyName) },
@@ -88,6 +119,9 @@ class DuktoEngine(private val app: Context) {
     private val avatarServer = AvatarServer(
         port = DEFAULT_PORT + AVATAR_PORT_OFFSET,
         signatureProvider = { currentSignature(app, settings.state.value.buddyName) },
+        // Serve the live bytes — peers always see the current avatar
+        // (custom upload or generated initials) without restart.
+        bitmapProvider = { _avatarBytes.value },
     )
 
     fun start() {
@@ -112,7 +146,39 @@ class DuktoEngine(private val app: Context) {
 
     fun setBuddyName(name: String) {
         settings.update { it.copy(buddyName = name) }
+        // The DefaultRenderer is keyed by signature — re-derive only if no
+        // custom image is set, so a name change isn't silently overwritten by
+        // the user's previous upload.
+        if (!_hasCustomAvatar.value) refreshAvatarBytes()
         messenger.sayHello()
+    }
+
+    /**
+     * Persist [uri]'s contents as the custom avatar. Decodes through
+     * [BitmapFactory] to validate it's a real image, then re-encodes as a
+     * 64×64 PNG so peers always get the canonical size regardless of input
+     * resolution.
+     */
+    fun setCustomAvatar(uri: Uri) {
+        val raw = app.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: throw IllegalStateException("cannot open $uri")
+        val source = BitmapFactory.decodeByteArray(raw, 0, raw.size)
+            ?: throw IllegalStateException("not a recognised image")
+        val sized = if (source.width == AVATAR_PX && source.height == AVATAR_PX) source
+        else Bitmap.createScaledBitmap(source, AVATAR_PX, AVATAR_PX, /* filter = */ true)
+        val baos = ByteArrayOutputStream(8 * 1024)
+        if (!sized.compress(Bitmap.CompressFormat.PNG, 100, baos)) {
+            throw IllegalStateException("PNG encode failed")
+        }
+        val bytes = baos.toByteArray()
+        avatarFile.writeBytes(bytes)
+        _avatarBytes.value = bytes
+        _hasCustomAvatar.value = true
+    }
+
+    fun clearCustomAvatar() {
+        runCatching { avatarFile.delete() }
+        refreshAvatarBytes()
     }
 
     fun setDestTreeUri(uri: String?) = settings.update { it.copy(destTreeUri = uri) }
@@ -122,6 +188,18 @@ class DuktoEngine(private val app: Context) {
     fun setBlockedExtensions(set: Set<String>) =
         settings.update { it.copy(blockedExtensions = set.map { e -> e.lowercase().trim() }.filter { e -> e.isNotEmpty() }.toSet()) }
     fun setMaxSessionSizeMB(mb: Int) = settings.update { it.copy(maxSessionSizeMB = mb.coerceAtLeast(0)) }
+    fun setThemeMode(mode: dev.wasabules.dukto.settings.ThemeMode) =
+        settings.update { it.copy(themeMode = mode) }
+
+    fun setMaxActivityEntries(n: Int) {
+        val capped = n.coerceAtLeast(0)
+        settings.update { it.copy(maxActivityEntries = capped) }
+        // Trim immediately so a user lowering the limit sees the effect.
+        if (capped > 0 && _activity.value.size > capped) {
+            _activity.update { it.take(capped) }
+            persistActivity()
+        }
+    }
 
     fun blockPeer(signature: String) = settings.update {
         it.copy(blockedPeers = it.blockedPeers + signature, approvedPeers = it.approvedPeers - signature)
@@ -218,7 +296,11 @@ class DuktoEngine(private val app: Context) {
     }
 
     private fun appendActivity(entry: ActivityEntry) {
-        _activity.update { (listOf(entry) + it).take(64) }
+        val cap = settings.state.value.maxActivityEntries
+        _activity.update {
+            val merged = listOf(entry) + it
+            if (cap > 0) merged.take(cap) else merged
+        }
         persistActivity()
     }
 
@@ -260,6 +342,7 @@ class DuktoEngine(private val app: Context) {
 
     private companion object {
         const val NOTIF_MAX = 1000
+        const val AVATAR_PX = 64
     }
 }
 

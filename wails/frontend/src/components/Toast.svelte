@@ -15,8 +15,8 @@
     bottom: 12px;
     left: 50%;
     transform: translateX(-50%);
-    background: #0f172a;
-    color: #f8fafc;
+    background: var(--text-strong);
+    color: var(--panel-bg-2);
     padding: 8px 16px;
     border-radius: 20px;
     font-size: 0.9rem;
