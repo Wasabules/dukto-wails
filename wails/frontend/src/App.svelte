@@ -949,5 +949,11 @@
     padding: 12px;
     height: 100vh;
     box-sizing: border-box;
+    /* Catch-all drop target. Wails' JS runtime filters drops by this CSS
+       marker when useDropTarget=true; without it, drops over empty regions
+       (header, gaps, the body itself) are silently rejected. The
+       `hitPeerAt(x, y)` test inside the drop handler still does the
+       peer-vs-queue routing via elementFromPoint(). */
+    --wails-drop-target: drop;
   }
 </style>
