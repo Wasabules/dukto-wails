@@ -2,7 +2,7 @@
 
 This document records the design for adding **end-to-end encryption** on top of the legacy Dukto LAN protocol while keeping full **back-compatibility** with the existing peers (Qt, third-party apps that don't speak v2). The implementation is split across three milestones (M1 → M3); the wire format described in [`PROTOCOL.md`](PROTOCOL.md) is **not** modified — v2 lives in additional, optional layers that older peers ignore.
 
-Status: design frozen. M1 in progress.
+Status: design frozen. M1 ✅ shipped, M2 ✅ shipped, M3 in progress (Wails-side Noise XX foundation landed; Android port + pairing UI follow).
 
 ## Threat model
 

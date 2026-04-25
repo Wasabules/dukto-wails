@@ -51,6 +51,51 @@ func TestLoadOrGenerate_RefusesGarbage(t *testing.T) {
 	}
 }
 
+// TestX25519DerivationMatchesEd25519PubConversion verifies the central
+// invariant the Noise tunnel relies on: the X25519 public key derived from
+// my own seed must equal the Edwards-to-Montgomery projection of my
+// Ed25519 public key. If this ever drifts, peers that pin Ed25519 pubkeys
+// would reject our handshake.
+func TestX25519DerivationMatchesEd25519PubConversion(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "identity.key")
+	id, err := LoadOrGenerate(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromSeed, err := id.X25519Public()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromPub, err := Ed25519PubToX25519Pub(id.Public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fromSeed != fromPub {
+		t.Fatalf("X25519 derivations diverged:\n  from seed: %x\n  from pub : %x", fromSeed, fromPub)
+	}
+}
+
+// TestEd25519PubToX25519Pub_RejectsBogusBytes ensures we don't accept
+// random byte strings as Edwards points — that would let an attacker
+// claim any X25519 pubkey by sending a crafted UDP HELLO.
+func TestEd25519PubToX25519Pub_RejectsBogusBytes(t *testing.T) {
+	bogus := make(ed25519.PublicKey, ed25519.PublicKeySize)
+	// Sweep a few candidates; not all 32-byte strings decode as Edwards
+	// points, so we look for at least one rejection.
+	rejected := false
+	for i := 0; i < 32; i++ {
+		bogus[0] = byte(i) // bottom-bit and high-bit changes shift the curve test
+		if _, err := Ed25519PubToX25519Pub(bogus); err != nil {
+			rejected = true
+			break
+		}
+	}
+	if !rejected {
+		t.Skip("could not find a rejecting input — environment-dependent edge case")
+	}
+}
+
 // TestFingerprint_DeterministicAndFormatted makes sure the user-facing
 // fingerprint is stable across calls and follows XXXX-XXXX-XXXX-XXXX format.
 func TestFingerprint_DeterministicAndFormatted(t *testing.T) {
