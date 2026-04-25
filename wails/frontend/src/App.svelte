@@ -42,6 +42,7 @@
     getTheme,
     setTheme as rpcSetTheme,
     type ThemeMode,
+    getFingerprint,
     pickExportPath,
     qrCodeSignature,
     receivingEnabled as fetchReceivingEnabled,
@@ -249,6 +250,15 @@
     });
   }
 
+  // Long-term identity fingerprint — fetched once on mount and shown in
+  // Settings → General. Empty string if the Go side failed to load the
+  // keypair (rare; logged on the backend).
+  let fingerprint: string = '';
+  async function loadFingerprint() {
+    try { fingerprint = await getFingerprint(); }
+    catch { fingerprint = ''; }
+  }
+
   function peerLabel(p: Peer): string {
     const alias = aliases[p.signature];
     if (alias) return alias;
@@ -261,6 +271,7 @@
   onMount(async () => {
     void refreshAvatarState();
     void loadTheme();
+    void loadFingerprint();
     let initialReceiving = true;
     [
       mySig, myBuddy, myDest, notifyOn, trayOn, myAddrs,
@@ -1019,6 +1030,7 @@
       hasCustomAvatar={customAvatarSet}
       {themeMode}
       onThemeModeChange={changeTheme}
+      {fingerprint}
       onPickAvatar={pickCustomAvatar}
       onClearAvatar={clearAvatar}
       onToggleNotifications={toggleNotifications}

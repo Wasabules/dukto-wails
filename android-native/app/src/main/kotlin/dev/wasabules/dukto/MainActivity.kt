@@ -6,25 +6,28 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import androidx.compose.runtime.LaunchedEffect
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.core.content.ContextCompat
 import androidx.compose.foundation.isSystemInDarkTheme
 import dev.wasabules.dukto.discovery.Peer
 import dev.wasabules.dukto.settings.ThemeMode
+import dev.wasabules.dukto.ui.BiometricLockScreen
 import dev.wasabules.dukto.ui.DuktoScreen
 import dev.wasabules.dukto.ui.PreviewScreen
 import dev.wasabules.dukto.ui.theme.DuktoTheme
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     private val app: DuktoApp get() = application as DuktoApp
     private val engine: DuktoEngine get() = app.engine
@@ -74,11 +77,23 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission(),
     ) { /* OS retains the answer */ }
 
+    /** Compose-readable flag that drives the lock screen vs the main UI. */
+    private var locked by mutableStateOf(false)
+
+    /** Last error shown on the lock screen — null while no prior failure. */
+    private var lockError by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         maybeAskNotificationPermission()
         handleShareIntent(intent)
+        // First-render decision: lock immediately if the user has the
+        // setting on AND the device can authenticate. Devices that lost
+        // their enrolled biometric (e.g. user removed all fingerprints)
+        // fall through and we leave the app open — the toggle in Settings
+        // will warn them.
+        locked = engine.settingsFlow.value.biometricLockEnabled && biometricAvailable()
 
         setContent {
             val settingsState by engine.settingsFlow.collectAsState()
@@ -92,6 +107,15 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.Dark -> true
             }
             DuktoTheme(darkTheme = effectiveDark) {
+                if (locked) {
+                    BiometricLockScreen(
+                        errorMessage = lockError,
+                        onUnlockTap = { showBiometricPrompt() },
+                    )
+                    LaunchedEffect(Unit) { showBiometricPrompt() }
+                    return@DuktoTheme
+                }
+
                 val auditEntries by engine.audit.entries.collectAsState()
                 val peers by engine.peers.collectAsState()
                 val activity by engine.activity.collectAsState()
@@ -138,6 +162,9 @@ class MainActivity : ComponentActivity() {
                         onMaxActivityChange = engine::setMaxActivityEntries,
                         onClearActivity = engine::clearActivity,
                         onThemeModeChange = engine::setThemeMode,
+                        biometricAvailable = biometricAvailable(),
+                        onBiometricLockChange = engine::setBiometricLockEnabled,
+                        fingerprint = engine.identityFingerprint,
                         onResolvePeerRequest = engine::resolvePeerRequest,
                         onSendText = { peer, text ->
                             engine.sendText(peer.address.hostAddress.orEmpty(), peer.port, text)
@@ -208,5 +235,62 @@ class MainActivity : ComponentActivity() {
         val out = sharedUris.toList()
         sharedUris.clear()
         return out
+    }
+
+    // ── biometric lock ───────────────────────────────────────────────────
+
+    /** Called when the user taps "Unlock" on the lock screen and on first
+     *  composition while [locked] is true. Shows the system biometric prompt;
+     *  on success flips [locked] to false. On error, leaves the lock screen
+     *  visible with the error message so the user can retry. */
+    private fun showBiometricPrompt() {
+        if (!locked) return
+        val executor = ContextCompat.getMainExecutor(this)
+        val callback = object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                locked = false
+                lockError = null
+            }
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                // ERROR_USER_CANCELED / ERROR_NEGATIVE_BUTTON: user dismissed
+                // the prompt — keep the lock screen visible without yelling.
+                lockError = if (errorCode == BiometricPrompt.ERROR_USER_CANCELED ||
+                    errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
+                    null
+                } else {
+                    errString.toString()
+                }
+            }
+        }
+        val prompt = BiometricPrompt(this, executor, callback)
+        val info = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Unlock Dukto")
+            .setSubtitle("Verify your identity to access transfers")
+            .setNegativeButtonText("Cancel")
+            // Allow weak biometrics (face unlock on most phones) since this
+            // is an app-level guard, not a key release.
+            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_WEAK)
+            .build()
+        prompt.authenticate(info)
+    }
+
+    /** True if the device has at least one enrolled biometric we can verify
+     *  against. Used to decide whether to honour the setting at startup and
+     *  to enable/disable the toggle in Settings. */
+    private fun biometricAvailable(): Boolean {
+        val mgr = BiometricManager.from(this)
+        return mgr.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) ==
+            BiometricManager.BIOMETRIC_SUCCESS
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Re-arm the lock whenever the app leaves the foreground. The next
+        // time the user comes back to it, BiometricLockScreen pops and the
+        // prompt fires automatically.
+        if (engine.settingsFlow.value.biometricLockEnabled && biometricAvailable()) {
+            locked = true
+            lockError = null
+        }
     }
 }

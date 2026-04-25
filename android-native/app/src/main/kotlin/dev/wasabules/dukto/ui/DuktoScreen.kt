@@ -91,6 +91,9 @@ fun DuktoScreen(
     onMaxActivityChange: (Int) -> Unit,
     onClearActivity: () -> Unit,
     onThemeModeChange: (dev.wasabules.dukto.settings.ThemeMode) -> Unit,
+    biometricAvailable: Boolean,
+    onBiometricLockChange: (Boolean) -> Unit,
+    fingerprint: String,
     onResolvePeerRequest: (String, PeerChoice) -> Unit,
     onSendText: (Peer, String) -> Unit,
     onSendFiles: (Peer) -> Unit,
@@ -206,6 +209,9 @@ fun DuktoScreen(
                 onMaxActivityChange = onMaxActivityChange,
                 onClearActivity = onClearActivity,
                 onThemeModeChange = onThemeModeChange,
+                biometricAvailable = biometricAvailable,
+                onBiometricLockChange = onBiometricLockChange,
+                fingerprint = fingerprint,
                 onDismiss = { settingsOpen = false },
             )
         }

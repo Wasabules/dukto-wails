@@ -38,6 +38,7 @@ class SettingsStore(context: Context) {
             putInt(KEY_MAX_SIZE_MB, next.maxSessionSizeMB)
             putInt(KEY_MAX_ACTIVITY, next.maxActivityEntries)
             putString(KEY_THEME_MODE, next.themeMode.name)
+            putBoolean(KEY_BIOMETRIC_LOCK, next.biometricLockEnabled)
         }
         _state.value = next
     }
@@ -65,6 +66,7 @@ class SettingsStore(context: Context) {
         themeMode = runCatching {
             ThemeMode.valueOf(prefs.getString(KEY_THEME_MODE, ThemeMode.System.name).orEmpty())
         }.getOrDefault(ThemeMode.System),
+        biometricLockEnabled = prefs.getBoolean(KEY_BIOMETRIC_LOCK, false),
     )
 
     private companion object {
@@ -78,6 +80,7 @@ class SettingsStore(context: Context) {
         const val KEY_MAX_SIZE_MB = "max_session_size_mb"
         const val KEY_MAX_ACTIVITY = "max_activity_entries"
         const val KEY_THEME_MODE = "theme_mode"
+        const val KEY_BIOMETRIC_LOCK = "biometric_lock_enabled"
         const val KEY_ACTIVITY_JSON = "activity_json"
 
         // Mirrors the Wails default; conservative against Windows-only nasties.
@@ -116,6 +119,11 @@ data class Settings(
     val maxActivityEntries: Int = 64,
     /** UI theme override; SYSTEM = follow system, LIGHT/DARK = force. */
     val themeMode: ThemeMode = ThemeMode.System,
+    /**
+     * When true, the activity is gated behind a BiometricPrompt every time
+     * the app comes to the foreground. Off by default — opt-in.
+     */
+    val biometricLockEnabled: Boolean = false,
 )
 
 enum class ThemeMode { System, Light, Dark }

@@ -78,6 +78,10 @@ export function FileHash(arg1) {
   return window['go']['main']['App']['FileHash'](arg1);
 }
 
+export function Fingerprint() {
+  return window['go']['main']['App']['Fingerprint']();
+}
+
 export function ForgetApprovedPeers() {
   return window['go']['main']['App']['ForgetApprovedPeers']();
 }
