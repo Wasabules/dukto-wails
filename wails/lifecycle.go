@@ -172,7 +172,9 @@ func (a *App) startTCPServer(ctx context.Context) error {
 				},
 			}
 		},
-		Allow: a.allowConn,
+		Allow:         a.allowConn,
+		Upgrade:       a.upgradeServerConn,
+		OnSessionMode: a.recordSessionMode,
 		OnSessionStart: func(cancel context.CancelFunc) {
 			a.cancelMu.Lock()
 			a.receiveCancel = cancel
@@ -182,6 +184,10 @@ func (a *App) startTCPServer(ctx context.Context) error {
 			a.cancelMu.Lock()
 			a.receiveCancel = nil
 			a.cancelMu.Unlock()
+			// Clear the latched session-mode flag so the *next* session
+			// starts with the default (cleartext) until OnSessionMode
+			// reasserts it.
+			a.recordSessionMode(false)
 		},
 		OnAcceptError: func(err error) {
 			runtime.EventsEmit(a.ctx, evtReceiveError, err.Error())
@@ -198,7 +204,7 @@ func (a *App) startTCPServer(ctx context.Context) error {
 func (a *App) pumpDiscoveryEvents() {
 	defer close(a.eventsStop)
 	for ev := range a.messenger.Events() {
-		view := peerView(ev.Peer)
+		view := a.peerViewWith(ev.Peer)
 		switch ev.Kind {
 		case discovery.EventFound:
 			runtime.EventsEmit(a.ctx, evtPeerFound, view)
@@ -227,12 +233,13 @@ func (a *App) pumpHelloTicker() {
 func (a *App) handleReceiveEvent(ev transfer.ReceiveEvent) error {
 	payload := map[string]any{
 		"name":  ev.Name,
-		"size":  ev.Size,
-		"path":  ev.LocalPath,
-		"text":  ev.Text,
-		"total": ev.Header.TotalElements,
-		"bytes": ev.Header.TotalSize,
-		"from":  ev.RemoteAddr,
+		"size":      ev.Size,
+		"path":      ev.LocalPath,
+		"text":      ev.Text,
+		"total":     ev.Header.TotalElements,
+		"bytes":     ev.Header.TotalSize,
+		"from":      ev.RemoteAddr,
+		"encrypted": a.sessionEncrypted(),
 	}
 	switch ev.Kind {
 	case transfer.EventSessionStart:
@@ -245,14 +252,14 @@ func (a *App) handleReceiveEvent(ev transfer.ReceiveEvent) error {
 		runtime.EventsEmit(a.ctx, evtReceiveFile, payload)
 		a.appendHistory(settings.HistoryItem{
 			Kind: "file", Name: ev.Name, Path: ev.LocalPath,
-			At: time.Now(), From: ev.RemoteAddr,
+			At: time.Now(), From: ev.RemoteAddr, Encrypted: a.sessionEncrypted(),
 		})
 	case transfer.EventTextReceived:
 		a.markReceiveActivity()
 		runtime.EventsEmit(a.ctx, evtReceiveText, payload)
 		a.appendHistory(settings.HistoryItem{
 			Kind: "text", Text: ev.Text,
-			At: time.Now(), From: ev.RemoteAddr,
+			At: time.Now(), From: ev.RemoteAddr, Encrypted: a.sessionEncrypted(),
 		})
 	case transfer.EventSessionComplete:
 		runtime.EventsEmit(a.ctx, evtReceiveDone, payload)

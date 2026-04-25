@@ -1,5 +1,5 @@
 import { derived, writable } from 'svelte/store';
-import { peerKey, type Peer } from '../dukto';
+import { peerKey, peers as fetchPeers, type Peer } from '../dukto';
 import { now } from './now';
 
 // Keyed by "ip:port" so repeated HELLO bursts replace rather than stack.
@@ -43,6 +43,24 @@ export function upsertPeer(p: Peer) {
     m.set(k, ts);
     return new Map(m);
   });
+}
+
+// refreshPeers re-fetches the full peer list from the backend and replaces
+// the per-key entries while leaving lastSeen alone. Called after a pair
+// toggle so the UI's paired flag flips immediately rather than waiting on
+// the next HELLO tick.
+export async function refreshPeers() {
+  try {
+    const list = await fetchPeers();
+    peersByKey.update((m) => {
+      for (const p of list) {
+        m.set(peerKey(p), p);
+      }
+      return new Map(m);
+    });
+  } catch (err) {
+    console.warn('refreshPeers failed', err);
+  }
 }
 
 export function removePeer(p: Peer) {

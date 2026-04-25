@@ -97,6 +97,11 @@ func (a *App) sendWithProgress(peer netip.AddrPort, srcs []transfer.Source, hdr 
 		"total": hdr.TotalSize,
 		"count": hdr.TotalElements,
 	})
+	// If the destination's Ed25519 fingerprint is in our pinned-peers
+	// table, install the v2 Upgrade hook so the dialled connection runs
+	// Noise XX before any session bytes hit the wire. Cleartext fallback
+	// happens implicitly when the peer isn't pinned.
+	pinnedFP := a.fingerprintForAddress(peer.Addr().String())
 	sender := &transfer.Sender{
 		OnProgress: func(done, total int64) {
 			runtime.EventsEmit(a.ctx, evtSendProgress, map[string]any{
@@ -104,6 +109,9 @@ func (a *App) sendWithProgress(peer netip.AddrPort, srcs []transfer.Source, hdr 
 				"total": total,
 			})
 		},
+	}
+	if pinnedFP != "" && a.IsPeerPinned(pinnedFP) {
+		sender.Upgrade = a.senderUpgrade(pinnedFP)
 	}
 	if err := sender.Dial(ctx, peer, srcs, hdr); err != nil {
 		runtime.EventsEmit(a.ctx, evtSendError, err.Error())

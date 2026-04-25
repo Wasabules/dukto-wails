@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { avatarUrl, parseSignature, peerKey, type Peer } from '../lib/dukto';
+  import { avatarUrl, parseSignature, peerKey, pinPeer, unpinPeer, type Peer } from '../lib/dukto';
 
   export let peers: Peer[] = [];
   export let selectedKey: string | null = null;
@@ -19,6 +19,23 @@
   export let onRenamePeer: (p: Peer) => void = () => {};
   export let onTrustPeer: (p: Peer) => void = () => {};
   export let onToggleBroadcastMode: (on: boolean) => void = () => {};
+  export let onPairChange: () => void = () => {};
+
+  async function togglePair(p: Peer) {
+    if (!p.fingerprint) return;
+    try {
+      if (p.paired) {
+        await unpinPeer(p.fingerprint);
+      } else {
+        await pinPeer(p.fingerprint, p.address);
+      }
+      onPairChange();
+    } catch (err) {
+      // Surface in UI via the same toast channel — for now log; a follow-up
+      // commit can route this through the toast store once we wire it.
+      console.error('pairing failed', err);
+    }
+  }
 
   const idleThresholdMs = 5 * 60 * 1000;
   function idleFor(p: Peer, nowMs: number): number {
@@ -92,8 +109,13 @@
                 {#if p.v2Capable}
                   <span
                     class="enc-badge"
-                    title={p.fingerprint ? `Supports encrypted transfers · ${p.fingerprint}` : 'Supports encrypted transfers'}
-                  >🔓</span>
+                    class:paired={p.paired}
+                    title={p.paired
+                      ? `Paired — encrypted transfers · ${p.fingerprint}`
+                      : p.fingerprint
+                        ? `Supports encrypted transfers · click 🔑 to pair · ${p.fingerprint}`
+                        : 'Supports encrypted transfers'}
+                  >{p.paired ? '🔒' : '🔓'}</span>
                 {/if}
               </div>
               <div class="detail">{ps.host || p.address} · {ps.platform || '–'}</div>
@@ -113,6 +135,14 @@
                 title="Allow to send"
                 on:click|stopPropagation={() => onTrustPeer(p)}
               >＋</button>
+            {/if}
+            {#if p.v2Capable && p.fingerprint}
+              <button
+                type="button"
+                class="mini ghost"
+                title={p.paired ? 'Unpair (transfers fall back to cleartext)' : 'Pair — pin this fingerprint to enable encrypted transfers'}
+                on:click|stopPropagation={() => togglePair(p)}
+              >{p.paired ? '🔓' : '🔑'}</button>
             {/if}
           </div>
           {#if prog}
@@ -230,6 +260,9 @@
     margin-left: 4px;
     font-size: 0.85rem;
     cursor: help;
+  }
+  .enc-badge.paired {
+    color: var(--accent-strong);
   }
   .peer-progress {
     position: absolute;

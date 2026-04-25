@@ -98,6 +98,10 @@ export function IdleAutoDisableMinutes() {
   return window['go']['main']['App']['IdleAutoDisableMinutes']();
 }
 
+export function IsPeerPinned(arg1) {
+  return window['go']['main']['App']['IsPeerPinned'](arg1);
+}
+
 export function LargeFileThresholdMB() {
   return window['go']['main']['App']['LargeFileThresholdMB']();
 }
@@ -156,6 +160,14 @@ export function PickFilesToSend() {
 
 export function PickFolderToSend() {
   return window['go']['main']['App']['PickFolderToSend']();
+}
+
+export function PinPeer(arg1, arg2) {
+  return window['go']['main']['App']['PinPeer'](arg1, arg2);
+}
+
+export function PinnedPeers() {
+  return window['go']['main']['App']['PinnedPeers']();
 }
 
 export function QRCodeSignature() {
@@ -296,6 +308,10 @@ export function UDPHelloCooldownSeconds() {
 
 export function UnblockPeer(arg1) {
   return window['go']['main']['App']['UnblockPeer'](arg1);
+}
+
+export function UnpinPeer(arg1) {
+  return window['go']['main']['App']['UnpinPeer'](arg1);
 }
 
 export function Whitelist() {

@@ -20,7 +20,7 @@ func (a *App) Peers() []PeerView {
 	raw := a.messenger.Peers()
 	out := make([]PeerView, 0, len(raw))
 	for _, p := range raw {
-		out = append(out, peerView(p))
+		out = append(out, a.peerViewWith(p))
 	}
 	return out
 }
@@ -36,6 +36,17 @@ func peerView(p discovery.Peer) PeerView {
 	}
 	if len(p.PubKey) == ed25519.PublicKeySize {
 		view.Fingerprint = identity.Fingerprint(ed25519.PublicKey(p.PubKey))
+	}
+	return view
+}
+
+// peerViewWith stamps the paired flag onto a PeerView using the App's
+// pinned-peers table. Bindings_peers' Peers() and lifecycle's discovery
+// pump both go through this so the UI sees a consistent "paired" state.
+func (a *App) peerViewWith(p discovery.Peer) PeerView {
+	view := peerView(p)
+	if view.Fingerprint != "" {
+		view.Paired = a.IsPeerPinned(view.Fingerprint)
 	}
 	return view
 }

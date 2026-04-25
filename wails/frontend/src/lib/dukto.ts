@@ -15,6 +15,16 @@ export interface Peer {
   // Long-term Ed25519 fingerprint, base32(sha256(pubkey)[:10]) formatted as
   // four 4-char groups. Empty for v1-only peers.
   fingerprint?: string;
+  // True when the peer's fingerprint is in our TOFU table (pinned). Outbound
+  // sends to a paired peer run over Noise XX automatically.
+  paired?: boolean;
+}
+
+export interface PinnedPeer {
+  fingerprint: string;
+  ed25519PubHex: string;
+  label?: string;
+  pinnedAt: string;
 }
 
 export interface ReceivePayload {
@@ -83,6 +93,15 @@ export type ThemeMode = 'system' | 'light' | 'dark';
 export const getTheme = () => App.Theme() as Promise<ThemeMode>;
 export const setTheme = (mode: ThemeMode) => App.SetTheme(mode);
 export const getFingerprint = () => App.Fingerprint() as Promise<string>;
+
+// v2 pinning — TOFU table over the Wails RPCs. PinPeer takes a fingerprint
+// already verified via the UDP discovery layer; the backend re-derives the
+// pubkey from the address and rejects mismatches.
+export const pinPeer = (fingerprint: string, address: string) =>
+  App.PinPeer(fingerprint, address) as Promise<PinnedPeer>;
+export const unpinPeer = (fingerprint: string) =>
+  App.UnpinPeer(fingerprint) as Promise<void>;
+export const pinnedPeers = () => App.PinnedPeers() as Promise<PinnedPeer[]>;
 export const setDestDir = (dir: string) => App.SetDestDir(dir);
 export const buddyName = () => App.BuddyName();
 export const setBuddyName = (name: string) => App.SetBuddyName(name);

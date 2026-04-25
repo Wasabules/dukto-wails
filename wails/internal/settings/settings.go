@@ -135,18 +135,40 @@ type Values struct {
 	// will accept connections on. Empty = accept everywhere. Matches
 	// against the interface's display name (e.g. "eth0", "Wi-Fi").
 	AllowedInterfaces []string `json:"allowedInterfaces,omitempty"`
+
+	// PinnedPeers is the TOFU table for the v2 encrypted overlay. Keyed
+	// by Ed25519 fingerprint (the user-visible base32 string), value is
+	// the raw 32-byte pubkey hex-encoded so JSON survives round-trips.
+	// Membership in this table means: trust this peer's identity, run
+	// Noise XX with their advertised key, and refuse a session whose
+	// remote_static doesn't match. See docs/SECURITY_v2.md.
+	PinnedPeers map[string]PinnedPeer `json:"pinnedPeers,omitempty"`
+}
+
+// PinnedPeer is one entry in the TOFU table.
+type PinnedPeer struct {
+	// Fingerprint duplicates the map key for self-describing serialisation.
+	Fingerprint string `json:"fingerprint"`
+	// Ed25519PubHex is the 32-byte public key, lowercase hex.
+	Ed25519PubHex string `json:"ed25519PubHex"`
+	// Label is the buddy-name caption displayed when the user pinned the
+	// peer. Persisted for the paired-peers list in Settings.
+	Label string `json:"label,omitempty"`
+	// PinnedAt is the wall-clock time of the trust action.
+	PinnedAt time.Time `json:"pinnedAt"`
 }
 
 // HistoryItem is one received file or text snippet, persisted so the threaded
 // Received panel survives restarts. Kept deliberately small — no thumbnails,
 // no payload bytes for files — so the settings JSON stays cheap to read.
 type HistoryItem struct {
-	Kind string    `json:"kind"`           // "file" or "text"
-	Name string    `json:"name,omitempty"` // filename for kind=file, empty for text
-	Path string    `json:"path,omitempty"` // local absolute path for kind=file
-	Text string    `json:"text,omitempty"` // snippet body for kind=text
-	At   time.Time `json:"at"`
-	From string    `json:"from,omitempty"` // "ip:port" of the sender
+	Kind      string    `json:"kind"`                // "file" or "text"
+	Name      string    `json:"name,omitempty"`      // filename for kind=file, empty for text
+	Path      string    `json:"path,omitempty"`      // local absolute path for kind=file
+	Text      string    `json:"text,omitempty"`      // snippet body for kind=text
+	At        time.Time `json:"at"`
+	From      string    `json:"from,omitempty"`      // "ip:port" of the sender
+	Encrypted bool      `json:"encrypted,omitempty"` // true when the session ran over Noise XX
 }
 
 // WindowState is the persisted window placement. All four fields are required;
