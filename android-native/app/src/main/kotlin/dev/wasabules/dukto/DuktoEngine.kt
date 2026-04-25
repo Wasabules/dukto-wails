@@ -113,6 +113,7 @@ class DuktoEngine(private val app: Context) {
     val messenger: Messenger = Messenger(
         context = app,
         signatureProvider = { currentSignature(app, settings.state.value.buddyName) },
+        identity = identity,
     )
     val peers = messenger.peers
 

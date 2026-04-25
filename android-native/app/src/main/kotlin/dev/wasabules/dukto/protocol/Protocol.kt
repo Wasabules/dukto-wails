@@ -49,15 +49,35 @@ enum class MessageType(val code: Byte) {
     HelloUnicast(0x02),
     Goodbye(0x03),
     HelloPortBroadcast(0x04),
-    HelloPortUnicast(0x05);
+    HelloPortUnicast(0x05),
+    /**
+     * v2 broadcast HELLO with embedded Ed25519 pubkey + signature over
+     * `port_le ‖ utf-8(signature)`. Carries the same information as
+     * [HelloPortBroadcast] plus the long-term identity. Legacy peers reject
+     * any byte > 0x05 and ignore the datagram silently, so a v2 peer sends
+     * both 0x04 and 0x06 every HELLO interval.
+     */
+    HelloPortKeyBroadcast(0x06),
+    /** v2 unicast reply, same payload shape as [HelloPortKeyBroadcast]. */
+    HelloPortKeyUnicast(0x07);
 
-    val hasPort: Boolean get() = this == HelloPortBroadcast || this == HelloPortUnicast
+    val hasPort: Boolean
+        get() = this == HelloPortBroadcast || this == HelloPortUnicast ||
+            this == HelloPortKeyBroadcast || this == HelloPortKeyUnicast
     val hasSignature: Boolean get() = this != Goodbye
+    val hasKey: Boolean
+        get() = this == HelloPortKeyBroadcast || this == HelloPortKeyUnicast
 
     companion object {
         fun fromCode(b: Byte): MessageType? = entries.firstOrNull { it.code == b }
     }
 }
+
+/** On-the-wire Ed25519 pubkey length carried in 0x06/0x07. */
+const val ED25519_PUBLIC_KEY_SIZE: Int = 32
+
+/** On-the-wire Ed25519 signature length carried in 0x06/0x07. */
+const val ED25519_SIGNATURE_SIZE: Int = 64
 
 /**
  * Hello broadcast type for a peer listening on [localPort]. Default port → 0x01,
@@ -81,24 +101,50 @@ data class BuddyMessage(
     val type: MessageType,
     val port: Int = 0,
     val signature: String = "",
+    /** Raw Ed25519 public key (32 B). Populated only for v2 types. */
+    val pubKey: ByteArray? = null,
+    /** Ed25519 signature (64 B) over [signedPayload]. Populated only for v2 types. */
+    val sig: ByteArray? = null,
 ) {
     /**
      * Encode to wire bytes. Does not validate; call [validate] first if needed.
+     *
+     * v2 wire layout (0x06/0x07):
+     *   type (1B) ‖ port (LE u16, 2B) ‖ pub_key (32B) ‖ sig (64B) ‖ utf-8 signature
      */
     fun serialize(): ByteArray {
         val sigBytes = if (type.hasSignature) signature.toByteArray(Charsets.UTF_8) else ByteArray(0)
-        val size = 1 + (if (type.hasPort) 2 else 0) + sigBytes.size
+        val keyBytes = if (type.hasKey) (pubKey ?: ByteArray(0)) else ByteArray(0)
+        val sigField = if (type.hasKey) (sig ?: ByteArray(0)) else ByteArray(0)
+        val size = 1 + (if (type.hasPort) 2 else 0) + keyBytes.size + sigField.size + sigBytes.size
         val buf = ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN)
         buf.put(type.code)
         if (type.hasPort) buf.putShort(port.toShort())
+        if (type.hasKey) {
+            buf.put(keyBytes)
+            buf.put(sigField)
+        }
         if (type.hasSignature) buf.put(sigBytes)
+        return buf.array()
+    }
+
+    /**
+     * Bytes covered by the Ed25519 signature in v2 HELLOs: little-endian port
+     * followed by the utf-8 signature string.
+     */
+    fun signedPayload(): ByteArray {
+        val sigBytes = signature.toByteArray(Charsets.UTF_8)
+        val buf = ByteBuffer.allocate(2 + sigBytes.size).order(ByteOrder.LITTLE_ENDIAN)
+        buf.putShort(port.toShort())
+        buf.put(sigBytes)
         return buf.array()
     }
 
     /**
      * Reject obviously malformed messages before sending. Matches the Qt
      * BuddyMessage::parse rules: HelloPort* with port=0 is invalid;
-     * non-Goodbye with empty signature is invalid.
+     * non-Goodbye with empty signature is invalid; key-bearing types must
+     * carry a 32-byte pubkey + 64-byte sig.
      */
     fun validate() {
         if (type.hasPort && port == 0) {
@@ -107,9 +153,42 @@ data class BuddyMessage(
         if (type.hasSignature && signature.isEmpty()) {
             throw InvalidMessageException("type ${typeHex()} requires a signature")
         }
+        if (type.hasKey) {
+            if (pubKey?.size != ED25519_PUBLIC_KEY_SIZE) {
+                throw InvalidMessageException("type ${typeHex()} pubkey must be $ED25519_PUBLIC_KEY_SIZE bytes")
+            }
+            if (sig?.size != ED25519_SIGNATURE_SIZE) {
+                throw InvalidMessageException("type ${typeHex()} sig must be $ED25519_SIGNATURE_SIZE bytes")
+            }
+        }
     }
 
     private fun typeHex(): String = "0x%02x".format(type.code)
+
+    // Generated equals/hashCode aren't safe for ByteArray fields — override
+    // to compare contents. Without this, two semantically-equal BuddyMessages
+    // would diverge based on identity.
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is BuddyMessage) return false
+        if (type != other.type || port != other.port || signature != other.signature) return false
+        val a = pubKey; val b = other.pubKey
+        if ((a == null) != (b == null)) return false
+        if (a != null && b != null && !a.contentEquals(b)) return false
+        val c = sig; val d = other.sig
+        if ((c == null) != (d == null)) return false
+        if (c != null && d != null && !c.contentEquals(d)) return false
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var h = type.hashCode()
+        h = 31 * h + port
+        h = 31 * h + signature.hashCode()
+        h = 31 * h + (pubKey?.contentHashCode() ?: 0)
+        h = 31 * h + (sig?.contentHashCode() ?: 0)
+        return h
+    }
 
     companion object {
         fun goodbye(): BuddyMessage = BuddyMessage(MessageType.Goodbye)
@@ -117,7 +196,9 @@ data class BuddyMessage(
         /**
          * Decode a UDP datagram. Throws [InvalidMessageException] on empty input,
          * unknown type byte, port-carrying type with port=0, or non-goodbye with
-         * empty signature. Mirrors the Go ParseBuddyMessage rules.
+         * empty signature. Mirrors the Go ParseBuddyMessage rules. v2 messages
+         * (0x06/0x07) are accepted with raw pubkey + sig fields populated;
+         * callers must invoke [verifyKey] before trusting them.
          */
         @Throws(InvalidMessageException::class)
         fun parse(data: ByteArray): BuddyMessage {
@@ -132,6 +213,18 @@ data class BuddyMessage(
                 off += 2
                 if (port == 0) throw InvalidMessageException("zero port in type 0x%02x".format(type.code))
             }
+            var pub: ByteArray? = null
+            var sigBytes: ByteArray? = null
+            if (type.hasKey) {
+                val need = ED25519_PUBLIC_KEY_SIZE + ED25519_SIGNATURE_SIZE
+                if (data.size < off + need) {
+                    throw InvalidMessageException("type 0x%02x truncated key/sig".format(type.code))
+                }
+                pub = data.copyOfRange(off, off + ED25519_PUBLIC_KEY_SIZE)
+                off += ED25519_PUBLIC_KEY_SIZE
+                sigBytes = data.copyOfRange(off, off + ED25519_SIGNATURE_SIZE)
+                off += ED25519_SIGNATURE_SIZE
+            }
             var sig = ""
             if (type.hasSignature) {
                 if (off >= data.size) {
@@ -139,7 +232,7 @@ data class BuddyMessage(
                 }
                 sig = String(data, off, data.size - off, Charsets.UTF_8)
             }
-            return BuddyMessage(type, port, sig)
+            return BuddyMessage(type, port, sig, pub, sigBytes)
         }
     }
 }

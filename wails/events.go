@@ -27,8 +27,14 @@ const (
 
 // PeerView is the Wails-facing projection of a discovered peer. Unlike
 // discovery.Peer it carries string fields only, so Wails can marshal it.
+//
+// V2Capable + Fingerprint are populated when the peer has produced at least
+// one verified 0x06/0x07 datagram. Fingerprint is the 16-char base32
+// representation of SHA-256(pubkey)[:10] (matches Settings → Profile).
 type PeerView struct {
-	Address   string `json:"address"`
-	Port      uint16 `json:"port"`
-	Signature string `json:"signature"`
+	Address     string `json:"address"`
+	Port        uint16 `json:"port"`
+	Signature   string `json:"signature"`
+	V2Capable   bool   `json:"v2Capable"`
+	Fingerprint string `json:"fingerprint,omitempty"`
 }

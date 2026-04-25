@@ -9,6 +9,12 @@ export interface Peer {
   address: string;
   port: number;
   signature: string;
+  // True when the peer has produced at least one verified v2 HELLO (0x06/0x07).
+  // Drives the encrypted-capability badge in the peer list.
+  v2Capable?: boolean;
+  // Long-term Ed25519 fingerprint, base32(sha256(pubkey)[:10]) formatted as
+  // four 4-char groups. Empty for v1-only peers.
+  fingerprint?: string;
 }
 
 export interface ReceivePayload {

@@ -2,6 +2,9 @@ package protocol
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"testing"
 )
@@ -72,9 +75,117 @@ func TestBuddyMessage_RoundTrip(t *testing.T) {
 			t.Errorf("parse after serialize %+v: %v", want, err)
 			continue
 		}
-		if got != want {
+		if !buddyEqual(got, want) {
 			t.Errorf("round-trip mismatch\n got  %+v\n want %+v", got, want)
 		}
+	}
+}
+
+func buddyEqual(a, b BuddyMessage) bool {
+	return a.Type == b.Type && a.Port == b.Port && a.Signature == b.Signature &&
+		bytes.Equal(a.PubKey, b.PubKey) && bytes.Equal(a.Sig, b.Sig)
+}
+
+func TestBuddyMessage_SerializeHelloPortKeyBroadcast(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := SignBuddyMessage(
+		BuddyMessage{Type: MsgHelloPortKeyBroadcast, Port: 5000, Signature: testSig},
+		pub, priv,
+	)
+	got := m.Serialize()
+	// type ‖ port_le ‖ pubkey ‖ sig ‖ utf-8(signature)
+	want := []byte{0x06, 0x88, 0x13}
+	want = append(want, pub...)
+	want = append(want, m.Sig...)
+	want = append(want, []byte(testSig)...)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("serialize length=%d want=%d", len(got), len(want))
+	}
+	// And the layout should round-trip + verify.
+	parsed, err := ParseBuddyMessage(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Port != 5000 || parsed.Signature != testSig {
+		t.Fatalf("round-trip changed semantic fields: %+v", parsed)
+	}
+	if !bytes.Equal(parsed.PubKey, pub) {
+		t.Fatal("pubkey mangled by round-trip")
+	}
+	if err := parsed.VerifyKey(); err != nil {
+		t.Fatalf("verify after round-trip: %v", err)
+	}
+}
+
+func TestBuddyMessage_VerifyKey_RejectsTamperedSignature(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := SignBuddyMessage(
+		BuddyMessage{Type: MsgHelloPortKeyBroadcast, Port: 5000, Signature: testSig},
+		pub, priv,
+	)
+	// Flip a single bit in the signed text — pubkey claims to control "...test-host..."
+	// but the wire payload says something else, so verification must fail.
+	tampered := m
+	tampered.Signature = "Mallory at evil-host (Linux)"
+	if err := tampered.VerifyKey(); err == nil {
+		t.Fatal("expected verify to fail on tampered signature string")
+	}
+	// Same when the port lies.
+	tampered = m
+	tampered.Port = 5001
+	if err := tampered.VerifyKey(); err == nil {
+		t.Fatal("expected verify to fail on tampered port")
+	}
+}
+
+func TestBuddyMessage_VerifyKey_RejectsMismatchedKey(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	otherPub, _, _ := ed25519.GenerateKey(rand.Reader)
+	m := SignBuddyMessage(
+		BuddyMessage{Type: MsgHelloPortKeyBroadcast, Port: 5000, Signature: testSig},
+		pub, priv,
+	)
+	m.PubKey = otherPub
+	if err := m.VerifyKey(); err == nil {
+		t.Fatal("expected verify to fail when pubkey doesn't match the signing key")
+	}
+}
+
+func TestParseBuddyMessage_KeyBearingTruncation(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	m := SignBuddyMessage(
+		BuddyMessage{Type: MsgHelloPortKeyBroadcast, Port: 5000, Signature: testSig},
+		pub, priv,
+	)
+	wire := m.Serialize()
+	// Truncate inside the pubkey field (1 + 2 + 16 = 19 bytes — half a pubkey).
+	if _, err := ParseBuddyMessage(wire[:19]); !errors.Is(err, ErrInvalidMessage) {
+		t.Fatalf("expected ErrInvalidMessage on truncated key, got %v", err)
+	}
+	// Truncate inside the sig field (1 + 2 + 32 + 30 = 65 bytes).
+	if _, err := ParseBuddyMessage(wire[:65]); !errors.Is(err, ErrInvalidMessage) {
+		t.Fatalf("expected ErrInvalidMessage on truncated sig, got %v", err)
+	}
+}
+
+func TestBuddyMessage_SignedPayload(t *testing.T) {
+	m := BuddyMessage{Type: MsgHelloPortKeyBroadcast, Port: 5000, Signature: testSig}
+	got := m.SignedPayload()
+	want := []byte{0x88, 0x13}
+	want = append(want, []byte(testSig)...)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("signed payload\n got  % x\n want % x", got, want)
+	}
+	// Sanity: verify the LE encoder matches binary.LittleEndian directly.
+	port := binary.LittleEndian.Uint16(got[:2])
+	if port != 5000 {
+		t.Fatalf("port LE decode = %d", port)
 	}
 }
 

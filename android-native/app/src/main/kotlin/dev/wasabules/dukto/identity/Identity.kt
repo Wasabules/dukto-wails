@@ -3,6 +3,7 @@ package dev.wasabules.dukto.identity
 import android.content.Context
 import androidx.security.crypto.EncryptedFile
 import androidx.security.crypto.MasterKey
+import net.i2p.crypto.eddsa.EdDSAEngine
 import net.i2p.crypto.eddsa.EdDSAPrivateKey
 import net.i2p.crypto.eddsa.EdDSAPublicKey
 import net.i2p.crypto.eddsa.spec.EdDSANamedCurveTable
@@ -36,11 +37,38 @@ data class Identity(
     /** Canonical 16-character fingerprint (XXXX-XXXX-XXXX-XXXX). */
     val fingerprint: String get() = fingerprintOf(publicKey)
 
+    /** Sign [payload] with the long-term Ed25519 key. Returned blob is 64 bytes. */
+    fun sign(payload: ByteArray): ByteArray {
+        val engine = EdDSAEngine(MessageDigest.getInstance(EdDSANamedCurveTable.ED_25519_CURVE_SPEC.hashAlgorithm))
+        engine.initSign(privateKey)
+        engine.update(payload)
+        return engine.sign()
+    }
+
     // Override equals/hashCode because the auto-generated ones for data
     // classes don't compare ByteArray contents structurally.
     override fun equals(other: Any?): Boolean =
         other is Identity && publicKey.contentEquals(other.publicKey)
     override fun hashCode(): Int = publicKey.contentHashCode()
+}
+
+/**
+ * Verify [sig] (Ed25519, 64 bytes) over [payload] against [publicKey] (32 bytes).
+ * Returns false on any malformed input rather than throwing — callers treat
+ * the result as a yes/no signal and don't differentiate failure modes.
+ */
+fun verifyEd25519(publicKey: ByteArray, payload: ByteArray, sig: ByteArray): Boolean {
+    if (publicKey.size != 32 || sig.size != 64) return false
+    return try {
+        val spec = EdDSANamedCurveTable.getByName(EdDSANamedCurveTable.ED_25519)
+        val pub = EdDSAPublicKey(EdDSAPublicKeySpec(publicKey, spec))
+        val engine = EdDSAEngine(MessageDigest.getInstance(spec.hashAlgorithm))
+        engine.initVerify(pub)
+        engine.update(payload)
+        engine.verify(sig)
+    } catch (t: Throwable) {
+        false
+    }
 }
 
 /**
