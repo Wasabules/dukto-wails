@@ -81,10 +81,13 @@ class Messenger(
     fun start() {
         if (socket != null) return
         acquireMulticastLock()
-        val s = DatagramSocket(null).apply {
-            reuseAddress = true
-            broadcast = true
-            bind(InetSocketAddress(port))
+        // NB: use `also` rather than `apply`. Inside apply { ... } `this` rebinds
+        // to the DatagramSocket, so a bare `port` would resolve to
+        // DatagramSocket.port (== -1 while unbound), not Messenger.port.
+        val s = DatagramSocket(null).also {
+            it.reuseAddress = true
+            it.broadcast = true
+            it.bind(InetSocketAddress(port))
         }
         socket = s
         refreshLocalAddrs()
