@@ -6,6 +6,7 @@
 package discovery
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"errors"
@@ -89,6 +90,9 @@ type Messenger struct {
 	// messenger. Mutate via SetHideFromDiscovery.
 	hidden bool
 
+	// onIdentityRotation is the optional rotation hook from Config.
+	onIdentityRotation func(addr netip.Addr, oldPub, newPub []byte)
+
 	events chan Event
 	stop   chan struct{}
 	wg     sync.WaitGroup
@@ -126,6 +130,14 @@ type Config struct {
 	// (broadcast + unicast reply + GOODBYE). Reads via SetHideFromDiscovery
 	// at runtime — toggling it doesn't restart the messenger.
 	HideFromDiscovery bool
+
+	// OnIdentityRotation fires when a source IP that previously
+	// produced a verified 0x06/0x07 with pubkey A now produces one
+	// with pubkey B. The discovery layer doesn't know what's pinned
+	// — the callback is invoked unconditionally and the engine
+	// decides whether to surface a UI alert. addr is the source IP;
+	// oldPub and newPub are the raw 32-byte Ed25519 pubkeys.
+	OnIdentityRotation func(addr netip.Addr, oldPub, newPub []byte)
 }
 
 // New builds a Messenger. It does not open any socket; call Start.
@@ -154,11 +166,12 @@ func New(cfg Config) *Messenger {
 		localIPs:  map[netip.Addr]int{},
 		badIPs:    map[netip.Addr]struct{}{},
 		v2Peers:   map[netip.Addr][]byte{},
-		lastHello: map[netip.Addr]time.Time{},
-		cooldown:  cfg.HelloCooldown,
-		hidden:    cfg.HideFromDiscovery,
-		events:    make(chan Event, 16),
-		stop:      make(chan struct{}),
+		lastHello:          map[netip.Addr]time.Time{},
+		cooldown:           cfg.HelloCooldown,
+		hidden:             cfg.HideFromDiscovery,
+		onIdentityRotation: cfg.OnIdentityRotation,
+		events:             make(chan Event, 16),
+		stop:               make(chan struct{}),
 	}
 }
 
@@ -464,8 +477,15 @@ func (m *Messenger) dispatch(msg protocol.BuddyMessage, src netip.Addr) {
 			Addr: src, Port: msg.Port, Signature: msg.Signature,
 			V2Capable: true, PubKey: pub,
 		}
+		var rotated []byte
 		m.mu.Lock()
 		m.ports[msg.Port] = struct{}{}
+		// Identity-rotation detection: if the same source IP previously
+		// announced a different pubkey, capture the old one so the
+		// engine can decide whether to surface a TOFU mismatch alert.
+		if old, ok := m.v2Peers[src]; ok && !bytes.Equal(old, pub) {
+			rotated = append([]byte(nil), old...)
+		}
 		m.v2Peers[src] = pub
 		// Stamp v2 on the legacy peer record too so Peers() readers reflect
 		// capability without having to consult v2Peers themselves.
@@ -474,7 +494,13 @@ func (m *Messenger) dispatch(msg protocol.BuddyMessage, src netip.Addr) {
 			existing.PubKey = pub
 			m.peers[src] = existing
 		}
+		hook := m.onIdentityRotation
 		m.mu.Unlock()
+		if rotated != nil && hook != nil {
+			// Fire after releasing the mutex so the hook can take its own
+			// locks (engine settings, audit, etc.) without re-entrancy.
+			hook(src, rotated, pub)
+		}
 		if msg.Type == protocol.MsgHelloPortKeyBroadcast {
 			m.sendUnicastHello(src, msg.Port)
 		}

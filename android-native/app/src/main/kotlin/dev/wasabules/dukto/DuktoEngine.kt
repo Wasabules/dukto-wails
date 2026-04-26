@@ -115,6 +115,7 @@ class DuktoEngine(private val app: Context) {
         signatureProvider = { currentSignature(app, settings.state.value.buddyName) },
         identity = identity,
         hideFromDiscovery = { settings.state.value.hideFromDiscovery },
+        onIdentityRotation = ::onPeerIdentityRotation,
     )
     val peers = messenger.peers
 
@@ -322,6 +323,31 @@ class DuktoEngine(private val app: Context) {
     /** SharedFlow exposing TOFU mismatch alerts to the UI. */
     val tofuMismatchEvents: kotlinx.coroutines.flow.MutableSharedFlow<TofuMismatch> =
         kotlinx.coroutines.flow.MutableSharedFlow(extraBufferCapacity = 4)
+
+    /**
+     * Discovery-layer hook: an IP that previously announced
+     * [oldPub] in 0x06/0x07 now announces [newPub]. Surface a TOFU
+     * mismatch alert only when the OLD fingerprint is in our pinned
+     * table — otherwise the rotation is just "the peer reinstalled"
+     * or a recycled IP, and warning would be noise.
+     */
+    private fun onPeerIdentityRotation(
+        addr: java.net.InetAddress,
+        oldPub: ByteArray,
+        newPub: ByteArray,
+    ) {
+        val oldFp = dev.wasabules.dukto.identity.fingerprintOf(oldPub)
+        val newFp = dev.wasabules.dukto.identity.fingerprintOf(newPub)
+        val pinned = settings.state.value.pinnedPeers[oldFp] ?: return
+        tofuMismatchEvents.tryEmit(
+            TofuMismatch(
+                address = addr.hostAddress.orEmpty(),
+                oldFingerprint = oldFp,
+                newFingerprint = newFp,
+                label = pinned.label,
+            ),
+        )
+    }
 
     private fun emitTofuMismatch(
         addr: java.net.InetAddress,
