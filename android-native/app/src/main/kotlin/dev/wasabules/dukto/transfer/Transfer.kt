@@ -121,6 +121,19 @@ class Server(
      *  pubkey; non-null when the handshake used a PSK so the engine
      *  can auto-pin the peer's identity. */
     private val onPskHandshake: (InetAddress, ByteArray) -> Unit = { _, _ -> },
+    /** Drop every legacy / unpaired v2 session when this returns true. */
+    private val refuseCleartextProvider: () -> Boolean = { false },
+    /** Whether the X25519 pubkey [first arg] corresponds to a pinned
+     *  peer in our TOFU table. Used by the refuseCleartext gate. */
+    private val isPubKeyPinned: (ByteArray) -> Boolean = { false },
+    /** Called when an inbound v2 handshake produces a remote_static
+     *  that doesn't match the X25519 derived from the peer's already-
+     *  pinned Ed25519 fingerprint. Used to surface the UI alert. */
+    private val onTofuMismatch: (InetAddress, oldFp: String, newFp: String) -> Unit = { _, _, _ -> },
+    /** Look up an existing TOFU mismatch for [first arg]'s remote_static
+     *  + the Ed25519 pubkey advertised over UDP. Returns the old and
+     *  new fingerprints when they disagree, null otherwise. */
+    private val tofuMismatchProvider: (InetAddress, ByteArray) -> Pair<String, String>? = { _, _ -> null },
 ) {
     private val scope = CoroutineScope(Dispatchers.IO)
     private val _events = MutableSharedFlow<TransferEvent>(extraBufferCapacity = 64)
@@ -316,12 +329,15 @@ class Server(
     )
 
     private fun upgradeIfV2(sock: Socket): StreamPair {
+        val refuse = refuseCleartextProvider()
         val identity = v2Identity
         if (identity == null) {
+            if (refuse) throw java.io.IOException("refuseCleartext: no v2 identity loaded")
             return StreamPair(sock.getInputStream(), sock.getOutputStream(), encrypted = false)
         }
         val peeked = dev.wasabules.dukto.tunnel.peekMagic(sock.getInputStream())
         if (!peeked.isV2) {
+            if (refuse) throw java.io.IOException("refuseCleartext: peer used legacy session header")
             return StreamPair(peeked.stream, sock.getOutputStream(), encrypted = false)
         }
         val psk = pendingPskProvider()
@@ -336,9 +352,21 @@ class Server(
             // PSK proves both ends know the same passphrase; safe to auto-
             // pin the peer's identity from this point on.
             onPskHandshake(sock.inetAddress, session.remoteStatic)
+        } else {
+            // TOFU mismatch detector: pinned peer's Ed25519 fingerprint
+            // points to a different X25519 than the remote_static we
+            // just received → kill the session and surface the alert.
+            val mismatch = tofuMismatchProvider(sock.inetAddress, session.remoteStatic)
+            if (mismatch != null) {
+                runCatching { session.close() }
+                onTofuMismatch(sock.inetAddress, mismatch.first, mismatch.second)
+                throw java.io.IOException("v2 fingerprint mismatch: ${mismatch.second}")
+            }
+            if (refuse && !isPubKeyPinned(session.remoteStatic)) {
+                runCatching { session.close() }
+                throw java.io.IOException("refuseCleartext: peer not paired")
+            }
         }
-        // Wrap the Session as InputStream/OutputStream so the rest of
-        // the receive code is unchanged.
         return StreamPair(SessionInput(session), SessionOutput(session), encrypted = true, remoteStatic = session.remoteStatic)
     }
 
@@ -508,6 +536,9 @@ class Sender(
     private val context: Context,
     private val v2Identity: dev.wasabules.dukto.identity.Identity? = null,
     private val pinnedX25519For: (InetAddress) -> ByteArray? = { null },
+    /** When non-null and returns true, refuse to dial peers without a
+     *  pinning record so the cleartext fallback never runs. */
+    private val refuseCleartextProvider: () -> Boolean = { false },
 ) {
 
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -626,6 +657,14 @@ class Sender(
     // ── shared transport ─────────────────────────────────────────────────────
 
     private inline fun runSend(to: Peer, isReceive: Boolean, body: (OutputStream) -> Long) {
+        if (refuseCleartextProvider() && pinnedX25519For(to.address) == null) {
+            _events.tryEmit(TransferEvent.Failed(
+                to.address,
+                "refuseCleartext: peer not paired",
+                isReceive,
+            ))
+            return
+        }
         val sock = try {
             Socket(to.address, to.port).apply { tcpNoDelay = true }
         } catch (e: Exception) {

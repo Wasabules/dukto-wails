@@ -146,6 +146,10 @@ export function PairWithPassphrase(arg1, arg2) {
   return window['go']['main']['App']['PairWithPassphrase'](arg1, arg2);
 }
 
+export function PairingCodeQR(arg1) {
+  return window['go']['main']['App']['PairingCodeQR'](arg1);
+}
+
 export function Peers() {
   return window['go']['main']['App']['Peers']();
 }
@@ -184,6 +188,10 @@ export function QRCodeSignature() {
 
 export function ReceivingEnabled() {
   return window['go']['main']['App']['ReceivingEnabled']();
+}
+
+export function RefuseCleartext() {
+  return window['go']['main']['App']['RefuseCleartext']();
 }
 
 export function RejectedExtensions() {
@@ -272,6 +280,10 @@ export function SetNotifications(arg1) {
 
 export function SetReceivingEnabled(arg1) {
   return window['go']['main']['App']['SetReceivingEnabled'](arg1);
+}
+
+export function SetRefuseCleartext(arg1) {
+  return window['go']['main']['App']['SetRefuseCleartext'](arg1);
 }
 
 export function SetRejectedExtensions(arg1) {

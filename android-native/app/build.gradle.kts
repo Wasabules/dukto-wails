@@ -64,6 +64,7 @@ dependencies {
     implementation(libs.androidx.security.crypto)
     implementation(libs.i2p.eddsa)
     implementation(libs.bouncycastle)
+    implementation(libs.zxing)
     implementation(libs.coil.compose)
     implementation(libs.kotlinx.coroutines.android)
     debugImplementation(libs.androidx.ui.tooling)

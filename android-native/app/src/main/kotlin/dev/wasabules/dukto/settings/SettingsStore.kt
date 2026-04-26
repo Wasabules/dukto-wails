@@ -40,6 +40,7 @@ class SettingsStore(context: Context) {
             putString(KEY_THEME_MODE, next.themeMode.name)
             putBoolean(KEY_BIOMETRIC_LOCK, next.biometricLockEnabled)
             putString(KEY_PINNED_PEERS, encodePinned(next.pinnedPeers))
+            putBoolean(KEY_REFUSE_CLEARTEXT, next.refuseCleartext)
         }
         _state.value = next
     }
@@ -69,6 +70,7 @@ class SettingsStore(context: Context) {
         }.getOrDefault(ThemeMode.System),
         biometricLockEnabled = prefs.getBoolean(KEY_BIOMETRIC_LOCK, false),
         pinnedPeers = decodePinned(prefs.getString(KEY_PINNED_PEERS, null)),
+        refuseCleartext = prefs.getBoolean(KEY_REFUSE_CLEARTEXT, false),
     )
 
     private companion object {
@@ -85,6 +87,7 @@ class SettingsStore(context: Context) {
         const val KEY_BIOMETRIC_LOCK = "biometric_lock_enabled"
         const val KEY_ACTIVITY_JSON = "activity_json"
         const val KEY_PINNED_PEERS = "pinned_peers_json"
+        const val KEY_REFUSE_CLEARTEXT = "refuse_cleartext"
 
         // Mirrors the Wails default; conservative against Windows-only nasties.
         const val DEFAULT_BLOCKED_EXT = "exe,bat,cmd,com,scr,msi,ps1,vbs,jse,lnk"
@@ -133,6 +136,12 @@ data class Settings(
      * timestamp. Mirrors the Wails settings.PinnedPeers map shape.
      */
     val pinnedPeers: Map<String, PinnedPeer> = emptyMap(),
+    /**
+     * When true the server drops every inbound session that isn't an
+     * authenticated v2 (Noise XX) handshake from a paired peer, and the
+     * sender refuses to dial unpaired peers. Off by default.
+     */
+    val refuseCleartext: Boolean = false,
 )
 
 data class PinnedPeer(

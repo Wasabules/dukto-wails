@@ -9,12 +9,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.Image
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -85,7 +87,7 @@ fun PairingDialog(
                 }
                 "generate" -> {
                     Text(
-                        "Read this code to the other peer (valid 60 s):",
+                        "Read or scan this code on the other peer (valid 60 s):",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Spacer(Modifier.height(6.dp))
@@ -96,6 +98,17 @@ fun PairingDialog(
                             fontFamily = FontFamily.Monospace,
                         ),
                     )
+                    Spacer(Modifier.height(8.dp))
+                    val qr = remember(generated) {
+                        runCatching { dev.wasabules.dukto.eff.encodeQr(generated, 480) }.getOrNull()
+                    }
+                    if (qr != null) {
+                        Image(
+                            bitmap = qr.asImageBitmap(),
+                            contentDescription = "Pairing QR code",
+                            modifier = Modifier.fillMaxWidth().height(220.dp),
+                        )
+                    }
                     Spacer(Modifier.height(6.dp))
                     Text(
                         "Once their handshake lands the peer's lock badge flips to 🔒.",

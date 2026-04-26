@@ -103,6 +103,13 @@ export const unpinPeer = (fingerprint: string) =>
   App.UnpinPeer(fingerprint) as Promise<void>;
 export const pinnedPeers = () => App.PinnedPeers() as Promise<PinnedPeer[]>;
 
+// "Refuse cleartext transfers" toggle — backend gate that drops every
+// session that isn't an authenticated v2 (Noise XX) handshake from a
+// paired peer.
+export const refuseCleartext = () => App.RefuseCleartext() as Promise<boolean>;
+export const setRefuseCleartext = (on: boolean) =>
+  App.SetRefuseCleartext(on) as Promise<void>;
+
 // PSK pairing flow (Noise XXpsk2 + EFF wordlist) — see docs/SECURITY_v2.md.
 // startPairing arms the responder side with a 30-second one-shot PSK and
 // returns the human-readable 5-word passphrase. The caller reads it out
@@ -113,6 +120,21 @@ export const startPairing = () => App.StartPairing() as Promise<string>;
 export const cancelPairing = () => App.CancelPairing() as Promise<void>;
 export const pairWithPassphrase = (addrPort: string, passphrase: string) =>
   App.PairWithPassphrase(addrPort, passphrase) as Promise<void>;
+export const pairingCodeQR = (passphrase: string) =>
+  App.PairingCodeQR(passphrase) as Promise<string>;
+
+// Payload of the tofu:mismatch event — emitted when an inbound v2 handshake
+// produces a remote_static that doesn't match the X25519 derived from the
+// peer's already-pinned Ed25519 fingerprint.
+export interface TOFUMismatch {
+  address: string;
+  oldFingerprint: string;
+  newFingerprint: string;
+  label?: string;
+}
+
+export const onTOFUMismatch = (cb: (m: TOFUMismatch) => void) =>
+  on('tofu:mismatch', cb);
 export const setDestDir = (dir: string) => App.SetDestDir(dir);
 export const buddyName = () => App.BuddyName();
 export const setBuddyName = (name: string) => App.SetBuddyName(name);

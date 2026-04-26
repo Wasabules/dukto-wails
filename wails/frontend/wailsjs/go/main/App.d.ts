@@ -76,6 +76,8 @@ export function OpenPath(arg1:string):Promise<void>;
 
 export function PairWithPassphrase(arg1:string,arg2:string):Promise<void>;
 
+export function PairingCodeQR(arg1:string):Promise<string>;
+
 export function Peers():Promise<Array<main.PeerView>>;
 
 export function PickAndSetCustomAvatar():Promise<string>;
@@ -95,6 +97,8 @@ export function PinnedPeers():Promise<Array<settings.PinnedPeer>>;
 export function QRCodeSignature():Promise<string>;
 
 export function ReceivingEnabled():Promise<boolean>;
+
+export function RefuseCleartext():Promise<boolean>;
 
 export function RejectedExtensions():Promise<Array<string>>;
 
@@ -139,6 +143,8 @@ export function SetMinFreeDiskPercent(arg1:number):Promise<void>;
 export function SetNotifications(arg1:boolean):Promise<void>;
 
 export function SetReceivingEnabled(arg1:boolean):Promise<void>;
+
+export function SetRefuseCleartext(arg1:boolean):Promise<void>;
 
 export function SetRejectedExtensions(arg1:Array<string>):Promise<void>;
 

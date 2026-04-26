@@ -143,6 +143,13 @@ type Values struct {
 	// Noise XX with their advertised key, and refuse a session whose
 	// remote_static doesn't match. See docs/SECURITY_v2.md.
 	PinnedPeers map[string]PinnedPeer `json:"pinnedPeers,omitempty"`
+
+	// RefuseCleartext, when true, drops every inbound session that
+	// isn't an authenticated v2 (Noise XX) handshake from a paired
+	// peer, and refuses every outbound send to a peer that isn't
+	// paired. Lets a privacy-conscious user opt out of the legacy
+	// cleartext fallback entirely.
+	RefuseCleartext bool `json:"refuseCleartext,omitempty"`
 }
 
 // PinnedPeer is one entry in the TOFU table.

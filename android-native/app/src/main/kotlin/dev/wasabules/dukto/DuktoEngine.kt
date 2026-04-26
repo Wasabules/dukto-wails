@@ -137,10 +137,15 @@ class DuktoEngine(private val app: Context) {
         },
         pendingPskProvider = { consumePairingPsk() },
         onPskHandshake = { addr, x25519 -> autoPinFromX25519(addr, x25519) },
+        refuseCleartextProvider = { settings.state.value.refuseCleartext },
+        isPubKeyPinned = { x25519 -> isX25519Pinned(x25519) },
+        tofuMismatchProvider = { addr, x25519 -> tofuMismatchFor(addr, x25519) },
+        onTofuMismatch = { addr, oldFp, newFp -> emitTofuMismatch(addr, oldFp, newFp) },
     )
     private val sender = Sender(
         context = app,
         v2Identity = identity,
+        refuseCleartextProvider = { settings.state.value.refuseCleartext },
         pinnedX25519For = { addr ->
             // Look up the pinned X25519 pubkey for `addr`. We pin by Ed25519
             // fingerprint, so first translate IP→Ed25519 pubkey via the
@@ -242,6 +247,9 @@ class DuktoEngine(private val app: Context) {
     fun setBiometricLockEnabled(enabled: Boolean) =
         settings.update { it.copy(biometricLockEnabled = enabled) }
 
+    fun setRefuseCleartext(enabled: Boolean) =
+        settings.update { it.copy(refuseCleartext = enabled) }
+
     /**
      * Pin the v2 peer at [addr] using its currently advertised Ed25519
      * pubkey. Refuses to pin a peer that hasn't sent a verified 0x06/0x07
@@ -275,6 +283,56 @@ class DuktoEngine(private val app: Context) {
         val pub = messenger.peers.value.values.firstOrNull { it.address == addr }?.pubKey ?: return false
         val fp = dev.wasabules.dukto.identity.fingerprintOf(pub)
         return settings.state.value.pinnedPeers.containsKey(fp)
+    }
+
+    /** True when [x25519] derives from a pinned Ed25519 pubkey in our TOFU table. */
+    private fun isX25519Pinned(x25519: ByteArray): Boolean {
+        val pinned = settings.state.value.pinnedPeers
+        for (rec in pinned.values) {
+            val pub = runCatching { hexDecode(rec.ed25519PubHex) }.getOrNull() ?: continue
+            val expected = dev.wasabules.dukto.identity.ed25519PubToX25519Pub(pub) ?: continue
+            if (expected.contentEquals(x25519)) return true
+        }
+        return false
+    }
+
+    /**
+     * Returns (oldFingerprint, newFingerprint) when the peer at [addr]
+     * is already pinned but its current Ed25519 advertisement maps to a
+     * different X25519 than [gotX25519]. Returns null on legitimate
+     * paired sessions and on first-contact peers.
+     */
+    private fun tofuMismatchFor(
+        addr: java.net.InetAddress,
+        gotX25519: ByteArray,
+    ): Pair<String, String>? {
+        val advertised = messenger.peers.value.values.firstOrNull { it.address == addr }?.pubKey ?: return null
+        val advertisedFp = dev.wasabules.dukto.identity.fingerprintOf(advertised)
+        val pinned = settings.state.value.pinnedPeers[advertisedFp] ?: return null
+        val pinnedPub = runCatching { hexDecode(pinned.ed25519PubHex) }.getOrNull() ?: return null
+        val expected = dev.wasabules.dukto.identity.ed25519PubToX25519Pub(pinnedPub) ?: return null
+        if (expected.contentEquals(gotX25519)) return null
+        return pinned.fingerprint to advertisedFp
+    }
+
+    /** SharedFlow exposing TOFU mismatch alerts to the UI. */
+    val tofuMismatchEvents: kotlinx.coroutines.flow.MutableSharedFlow<TofuMismatch> =
+        kotlinx.coroutines.flow.MutableSharedFlow(extraBufferCapacity = 4)
+
+    private fun emitTofuMismatch(
+        addr: java.net.InetAddress,
+        oldFingerprint: String,
+        newFingerprint: String,
+    ) {
+        val sig = messenger.peers.value.values.firstOrNull { it.address == addr }?.signature.orEmpty()
+        tofuMismatchEvents.tryEmit(
+            TofuMismatch(
+                address = addr.hostAddress.orEmpty(),
+                oldFingerprint = oldFingerprint,
+                newFingerprint = newFingerprint,
+                label = sig,
+            ),
+        )
     }
 
     // ── PSK pairing flow ────────────────────────────────────────────────
@@ -644,6 +702,17 @@ sealed interface ActivityEntry {
         }
     }
 }
+
+/** Payload of a TOFU mismatch event — the peer's Ed25519 fingerprint
+ *  changed since the last successful pairing. The UI surfaces this in a
+ *  modal so the user can re-pair (and verify the new key out-of-band)
+ *  or unpin the old one. */
+data class TofuMismatch(
+    val address: String,
+    val oldFingerprint: String,
+    val newFingerprint: String,
+    val label: String,
+)
 
 fun DiscoveryPeer.toTransferPeer(): TransferPeer = TransferPeer(address, port)
 

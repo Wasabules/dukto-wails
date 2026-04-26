@@ -102,6 +102,12 @@ func (a *App) sendWithProgress(peer netip.AddrPort, srcs []transfer.Source, hdr 
 	// Noise XX before any session bytes hit the wire. Cleartext fallback
 	// happens implicitly when the peer isn't pinned.
 	pinnedFP := a.fingerprintForAddress(peer.Addr().String())
+	pinned := pinnedFP != "" && a.IsPeerPinned(pinnedFP)
+	if !pinned && a.settings.Values().RefuseCleartext {
+		runtime.EventsEmit(a.ctx, evtSendError,
+			fmt.Sprintf("refuseCleartext: peer %s is not paired", peer))
+		return
+	}
 	sender := &transfer.Sender{
 		OnProgress: func(done, total int64) {
 			runtime.EventsEmit(a.ctx, evtSendProgress, map[string]any{
@@ -110,7 +116,7 @@ func (a *App) sendWithProgress(peer netip.AddrPort, srcs []transfer.Source, hdr 
 			})
 		},
 	}
-	if pinnedFP != "" && a.IsPeerPinned(pinnedFP) {
+	if pinned {
 		sender.Upgrade = a.senderUpgrade(pinnedFP)
 	}
 	if err := sender.Dial(ctx, peer, srcs, hdr); err != nil {

@@ -113,6 +113,8 @@ fun DuktoScreen(
     onStartPairing: (() -> String)? = null,
     onCancelPairing: (() -> Unit)? = null,
     onPairWithPassphrase: (suspend (Peer, String) -> Result<Unit>)? = null,
+    /** Toggles the "refuse cleartext" backend flag (Settings sheet). */
+    onRefuseCleartextChange: (Boolean) -> Unit = {},
 ) {
     var settingsOpen by remember { mutableStateOf(false) }
     var sendSheetPeer by remember { mutableStateOf<Peer?>(null) }
@@ -244,6 +246,8 @@ fun DuktoScreen(
                 biometricAvailable = biometricAvailable,
                 onBiometricLockChange = onBiometricLockChange,
                 fingerprint = fingerprint,
+                onRefuseCleartextChange = onRefuseCleartextChange,
+                onUnpinPeer = onUnpinPeer ?: {},
                 onDismiss = { settingsOpen = false },
             )
         }

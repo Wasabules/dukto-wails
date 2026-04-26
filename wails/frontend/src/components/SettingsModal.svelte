@@ -28,6 +28,8 @@
   export let idleMinutes = 0;
   export let blockList: string[] = [];
   export let confirmUnknown = false;
+  export let refuseCleartext = false;
+  export let pinned: import('../lib/dukto').PinnedPeer[] = [];
 
   // Limits
   export let maxFiles = 0;
@@ -76,6 +78,8 @@
   export let onUnblockSig: (sig: string) => void = () => {};
   export let onToggleConfirmUnknown: (on: boolean) => void = () => {};
   export let onForgetApprovals: () => void = () => {};
+  export let onToggleRefuseCleartext: (on: boolean) => void = () => {};
+  export let onUnpinPeer: (fingerprint: string) => void = () => {};
 
   // Limits callbacks
   export let onMaxFilesChange: (n: number) => void = () => {};
@@ -199,6 +203,10 @@
           {onUnblockSig}
           {onToggleConfirmUnknown}
           {onForgetApprovals}
+          {refuseCleartext}
+          {pinned}
+          {onToggleRefuseCleartext}
+          {onUnpinPeer}
         />
       {:else if tab === 'limits'}
         <LimitsTab

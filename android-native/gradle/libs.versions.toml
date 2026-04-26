@@ -12,6 +12,7 @@ biometric = "1.1.0"
 securityCrypto = "1.1.0-alpha06"
 eddsa = "0.3.0"
 bouncycastle = "1.79"
+zxing = "3.5.3"
 junit = "4.13.2"
 
 [libraries]
@@ -29,6 +30,7 @@ androidx-biometric = { group = "androidx.biometric", name = "biometric", version
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 i2p-eddsa = { group = "net.i2p.crypto", name = "eddsa", version.ref = "eddsa" }
 bouncycastle = { group = "org.bouncycastle", name = "bcprov-jdk18on", version.ref = "bouncycastle" }
+zxing = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
