@@ -53,12 +53,15 @@ Reusable Go packages under `internal/`:
 
 | Package       | Purpose |
 |---------------|---------|
-| `protocol`    | Pure-Go encoder/decoder for UDP `BuddyMessage`, TCP `SessionHeader`/`ElementHeader`, `BuildSignature`. No Wails deps; the single source of truth for byte-level I/O. Round-trip and parity tests next to it. |
-| `discovery`   | UDP messenger: HELLO/GOODBYE, self-echo suppression, broadcast-storm guard, configurable per-source HELLO cooldown. |
-| `transfer`    | TCP server + `Receiver` (streaming parse of the session format) + `Sender`. Exposes an `AllowSession` hook that policy code plugs into. |
-| `settings`    | JSON-file-backed settings store with atomic `Update(func(*Values))`. `OpenWithMigration` seeds on first run from the Qt `QSettings` store (registry on Windows, plist on macOS, INI on Linux). |
-| `history`     | Recent-activity list (sent / received). |
-| `audit`       | Append-only JSON-per-line audit log; 10 MiB rotation (`audit.log` + `audit.log.1`); mode `0o600`. |
+| `protocol`    | Pure-Go encoder/decoder for UDP `BuddyMessage` (types `0x01..0x07`), TCP `SessionHeader`/`ElementHeader`, `BuildSignature`. No Wails deps; the single source of truth for byte-level I/O. Round-trip and parity tests next to it. |
+| `discovery`   | UDP messenger: HELLO/GOODBYE, v2 capability advertisement (`0x06`/`0x07` signed Ed25519), self-echo suppression, broadcast-storm guard, per-source HELLO cooldown, IP-level identity-rotation detection, stealth mode with selective reply for paired peers. |
+| `transfer`    | TCP server + `Receiver` (streaming parse) + `Sender`. Magic-prefix peek (`DKTOv2\x00\x00`) routes a session through the encrypted Noise XX tunnel when the peer is paired; legacy bytes flow through the unmodified `Receiver` otherwise. Exposes `Allow`, `Upgrade`, and `OnSessionMode` hooks. |
+| `tunnel`      | Noise XX (X25519 + ChaCha20-Poly1305 + SHA-256) handshake + transport layer using `github.com/flynn/noise`. XXpsk2 path for first-pairing. Magic-prefix peek with replay-on-fallback so legacy v1 senders see an unmodified byte stream. |
+| `identity`    | Long-term Ed25519 keypair persisted at file mode `0600` under `<UserConfigDir>/dukto/identity.key`. X25519 derivation from the Ed25519 seed (RFC 8032 / 7748) and Edwards-to-Montgomery projection so the same long-term identity covers both signing (UDP HELLO) and DH (Noise XX). Fingerprint = `base32(SHA-256(pub)[:10])`. |
+| `eff`         | Bundled EFF Short Wordlist 1 (1296 words). 5-word passphrase generator + HKDF-SHA256 PSK derivation (`info="DUKTO-PSK-v1"`). Cross-stack known-vector tests pin the bytewise output. |
+| `settings`    | JSON-file-backed settings store with atomic `Update(func(*Values))`. `OpenWithMigration` seeds on first run from the Qt `QSettings` store (registry on Windows, plist on macOS, INI on Linux). Holds `PinnedPeers`, `RefuseCleartext`, `HideFromDiscovery`, `ManualPeers`, … |
+| `history`     | Recent-activity list (sent / received) with `Encrypted` flag per entry. |
+| `audit`       | Append-only JSON-per-line audit log; 10 MiB rotation (`audit.log` + `audit.log.1`); mode `0o600`. Records accept/reject, peer_pinned, session_encrypted, tofu_mismatch, etc. |
 | `platform`    | OS name token for the signature (`Windows`/`Macintosh`/`Linux`), user/hostname, default download path, dark-theme detection. |
 | `osint`       | Cross-platform shims kept out of `platform` (e.g. open file in file manager). |
 | `httpserve`   | Avatar HTTP side-channel on `udp_port + 1`. |
@@ -86,4 +89,19 @@ On first run the Go side reads the Qt `QSettings` store (if present) and seeds `
 
 ## Security surface
 
-The Wails port carries extra policy gates not present in the Qt6 app. Ordered as they run on the receive path: master switch → block list → TCP per-IP accept cooldown → allowed-interface filter → whitelist → confirm-unknown modal → session header checks (blocked extensions, large-session threshold, max files, max path depth, minimum free-disk percent). Every accept/reject decision is written to the audit log and visible in the **Audit** settings tab. Full list in `../docs/PORT_SCOPE.md`.
+The Wails port carries extra policy gates not present in the Qt6 app. Ordered as they run on the receive path:
+
+1. master switch (receiving enabled)
+2. block list (signature)
+3. TCP per-IP accept cooldown
+4. allowed-interface filter
+5. whitelist (only-approved-buddies mode)
+6. confirm-unknown peers modal (60 s timeout)
+7. **v2 magic-prefix peek**: if `DKTOv2\x00\x00`, run Noise XX responder; if not, fall back to the legacy `SessionHeader` parser
+8. **TOFU mismatch detector**: when the new `remote_static` doesn't match the X25519 derived from the peer's pinned Ed25519 fingerprint, kill the session and emit a UI alert
+9. **RefuseCleartext gate**: if on, drop every legacy session and every unpaired-v2 session
+10. session-header checks: blocked extensions, large-session size threshold, max files, max path depth, minimum free-disk percent
+
+Every accept/reject decision is written to the audit log (mode `0600`, 10 MiB rotation) and is visible in the **Audit** settings tab.
+
+The full v2 design is in [`../docs/SECURITY_v2.md`](../docs/SECURITY_v2.md): threat model, exact wire layout for the `0x06`/`0x07` HELLO types, the Noise XX / XXpsk2 handshake, EFF passphrase encoding, and the milestone breakdown (M1–M3d, all shipped).
