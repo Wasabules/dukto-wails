@@ -113,6 +113,14 @@ class Server(
     private val signatureLookup: (InetAddress) -> String? = { null },
     private val v2Identity: dev.wasabules.dukto.identity.Identity? = null,
     private val onSessionMode: (Boolean) -> Unit = {},
+    /** Called once per inbound v2 handshake. Returns the one-shot PSK if
+     *  a pairing is currently armed (XXpsk2 path), or null for plain XX.
+     *  The returned PSK is consumed atomically by the implementation. */
+    private val pendingPskProvider: () -> ByteArray? = { null },
+    /** Called after a v2 handshake completes with the peer's X25519
+     *  pubkey; non-null when the handshake used a PSK so the engine
+     *  can auto-pin the peer's identity. */
+    private val onPskHandshake: (InetAddress, ByteArray) -> Unit = { _, _ -> },
 ) {
     private val scope = CoroutineScope(Dispatchers.IO)
     private val _events = MutableSharedFlow<TransferEvent>(extraBufferCapacity = 64)
@@ -316,13 +324,19 @@ class Server(
         if (!peeked.isV2) {
             return StreamPair(peeked.stream, sock.getOutputStream(), encrypted = false)
         }
+        val psk = pendingPskProvider()
         val session = dev.wasabules.dukto.tunnel.handshake(
             peeked.stream, sock.getOutputStream(),
             dev.wasabules.dukto.tunnel.HandshakeRole.Responder,
             identity.x25519Private(), identity.x25519Public(),
-            psk = null,
+            psk = psk,
             closer = {},
         )
+        if (psk != null) {
+            // PSK proves both ends know the same passphrase; safe to auto-
+            // pin the peer's identity from this point on.
+            onPskHandshake(sock.inetAddress, session.remoteStatic)
+        }
         // Wrap the Session as InputStream/OutputStream so the rest of
         // the receive code is unchanged.
         return StreamPair(SessionInput(session), SessionOutput(session), encrypted = true, remoteStatic = session.remoteStatic)

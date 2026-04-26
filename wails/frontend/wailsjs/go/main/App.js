@@ -38,6 +38,10 @@ export function BuddyName() {
   return window['go']['main']['App']['BuddyName']();
 }
 
+export function CancelPairing() {
+  return window['go']['main']['App']['CancelPairing']();
+}
+
 export function CancelTransfer() {
   return window['go']['main']['App']['CancelTransfer']();
 }
@@ -136,6 +140,10 @@ export function Notifications() {
 
 export function OpenPath(arg1) {
   return window['go']['main']['App']['OpenPath'](arg1);
+}
+
+export function PairWithPassphrase(arg1, arg2) {
+  return window['go']['main']['App']['PairWithPassphrase'](arg1, arg2);
 }
 
 export function Peers() {
@@ -288,6 +296,10 @@ export function SetWhitelistEnabled(arg1) {
 
 export function Signature() {
   return window['go']['main']['App']['Signature']();
+}
+
+export function StartPairing() {
+  return window['go']['main']['App']['StartPairing']();
 }
 
 export function StashPastedImage(arg1, arg2) {

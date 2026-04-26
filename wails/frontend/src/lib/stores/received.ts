@@ -18,6 +18,7 @@ export function pushHistory(h: HistoryEntry, opts: { prepend?: boolean } = {}) {
     at: new Date(h.at),
     media: h.kind === 'file' ? mediaKindFromName(h.name ?? '') : 'other',
     from: h.from ?? '',
+    encrypted: !!h.encrypted,
   };
   received.update((cur) => (opts.prepend ? [item, ...cur] : [...cur, item]).slice(0, 50));
 }

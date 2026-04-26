@@ -9,6 +9,8 @@
     at: Date;
     media: MediaKind;
     from: string;
+    /** True when the originating session ran over Noise XX. */
+    encrypted?: boolean;
   }
 </script>
 
@@ -73,6 +75,9 @@
   <div class="meta">
     <div class="row-head">
       <span class="badge">{item.kind}</span>
+      {#if item.encrypted}
+        <span class="enc-badge" title="Encrypted (Noise XX)">🔒</span>
+      {/if}
       <span class="rname" title={item.name}>{item.name}</span>
       <time>{item.at.toLocaleTimeString()}</time>
     </div>

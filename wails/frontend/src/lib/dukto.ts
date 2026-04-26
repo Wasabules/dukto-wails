@@ -102,6 +102,17 @@ export const pinPeer = (fingerprint: string, address: string) =>
 export const unpinPeer = (fingerprint: string) =>
   App.UnpinPeer(fingerprint) as Promise<void>;
 export const pinnedPeers = () => App.PinnedPeers() as Promise<PinnedPeer[]>;
+
+// PSK pairing flow (Noise XXpsk2 + EFF wordlist) — see docs/SECURITY_v2.md.
+// startPairing arms the responder side with a 30-second one-shot PSK and
+// returns the human-readable 5-word passphrase. The caller reads it out
+// or shows it on screen; the other peer types it on their device and
+// pairWithPassphrase opens an outbound v2 session that authenticates via
+// the same PSK. On success both peers auto-pin each other's identity.
+export const startPairing = () => App.StartPairing() as Promise<string>;
+export const cancelPairing = () => App.CancelPairing() as Promise<void>;
+export const pairWithPassphrase = (addrPort: string, passphrase: string) =>
+  App.PairWithPassphrase(addrPort, passphrase) as Promise<void>;
 export const setDestDir = (dir: string) => App.SetDestDir(dir);
 export const buddyName = () => App.BuddyName();
 export const setBuddyName = (name: string) => App.SetBuddyName(name);
@@ -237,6 +248,7 @@ export interface HistoryEntry {
   text?: string;
   at: number;
   from?: string;
+  encrypted?: boolean;
 }
 
 // Preview helpers ----------------------------------------------------------

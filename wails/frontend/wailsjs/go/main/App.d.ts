@@ -22,6 +22,8 @@ export function BlockedPeers():Promise<Array<string>>;
 
 export function BuddyName():Promise<string>;
 
+export function CancelPairing():Promise<void>;
+
 export function CancelTransfer():Promise<void>;
 
 export function ClearAudit():Promise<void>;
@@ -71,6 +73,8 @@ export function MinFreeDiskPercent():Promise<number>;
 export function Notifications():Promise<boolean>;
 
 export function OpenPath(arg1:string):Promise<void>;
+
+export function PairWithPassphrase(arg1:string,arg2:string):Promise<void>;
 
 export function Peers():Promise<Array<main.PeerView>>;
 
@@ -147,6 +151,8 @@ export function SetUDPHelloCooldownSeconds(arg1:number):Promise<void>;
 export function SetWhitelistEnabled(arg1:boolean):Promise<void>;
 
 export function Signature():Promise<string>;
+
+export function StartPairing():Promise<string>;
 
 export function StashPastedImage(arg1:string,arg2:string):Promise<string>;
 
