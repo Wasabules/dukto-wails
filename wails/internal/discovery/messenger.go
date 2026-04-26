@@ -93,6 +93,9 @@ type Messenger struct {
 	// onIdentityRotation is the optional rotation hook from Config.
 	onIdentityRotation func(addr netip.Addr, oldPub, newPub []byte)
 
+	// isPubKeyPinned bypasses HideFromDiscovery for paired peers' probes.
+	isPubKeyPinned func(ed25519.PublicKey) bool
+
 	events chan Event
 	stop   chan struct{}
 	wg     sync.WaitGroup
@@ -130,6 +133,13 @@ type Config struct {
 	// (broadcast + unicast reply + GOODBYE). Reads via SetHideFromDiscovery
 	// at runtime — toggling it doesn't restart the messenger.
 	HideFromDiscovery bool
+
+	// IsPubKeyPinned, when set, lets the auto-reply path bypass the
+	// HideFromDiscovery silence for inbound 0x06/0x07 from a paired
+	// peer. The messenger doesn't own the TOFU table — the engine
+	// resolves the question and returns true to mean "answer this one
+	// even in stealth". Nil = never bypass.
+	IsPubKeyPinned func(ed25519.PublicKey) bool
 
 	// OnIdentityRotation fires when a source IP that previously
 	// produced a verified 0x06/0x07 with pubkey A now produces one
@@ -170,6 +180,7 @@ func New(cfg Config) *Messenger {
 		cooldown:           cfg.HelloCooldown,
 		hidden:             cfg.HideFromDiscovery,
 		onIdentityRotation: cfg.OnIdentityRotation,
+		isPubKeyPinned:     cfg.IsPubKeyPinned,
 		events:             make(chan Event, 16),
 		stop:               make(chan struct{}),
 	}
@@ -434,7 +445,10 @@ func (m *Messenger) dispatch(msg protocol.BuddyMessage, src netip.Addr) {
 		m.peers[src] = peer
 		m.mu.Unlock()
 		if msg.Type == protocol.MsgHelloBroadcast {
-			m.sendUnicastHello(src, protocol.DefaultPort)
+			// Legacy path — no pubkey to test, so v2Pub may already
+			// give us a paired-bypass hint when the peer also sent a
+			// recent 0x06.
+			m.sendUnicastHelloReply(src, protocol.DefaultPort, v2Pub)
 		}
 		m.emit(Event{Kind: EventFound, Peer: peer})
 
@@ -461,7 +475,7 @@ func (m *Messenger) dispatch(msg protocol.BuddyMessage, src netip.Addr) {
 		m.ports[msg.Port] = struct{}{}
 		m.mu.Unlock()
 		if msg.Type == protocol.MsgHelloPortBroadcast {
-			m.sendUnicastHello(src, msg.Port)
+			m.sendUnicastHelloReply(src, msg.Port, v2Pub)
 		}
 		m.emit(Event{Kind: EventFound, Peer: peer})
 
@@ -502,7 +516,10 @@ func (m *Messenger) dispatch(msg protocol.BuddyMessage, src netip.Addr) {
 			hook(src, rotated, pub)
 		}
 		if msg.Type == protocol.MsgHelloPortKeyBroadcast {
-			m.sendUnicastHello(src, msg.Port)
+			// We have the verified pubkey right here, so the paired-
+			// bypass uses it directly. A paired stealth peer answers
+			// us; an unpaired stealth peer stays silent.
+			m.sendUnicastHelloReply(src, msg.Port, ed25519.PublicKey(pub))
 		}
 		m.emit(Event{Kind: EventFound, Peer: peer})
 	}
@@ -522,25 +539,38 @@ func (m *Messenger) lookupV2Key(src netip.Addr) []byte {
 }
 
 // UnicastHello sends a HELLO to a specific addr:port. Unlike SayHello (which
-// broadcasts), this is used to manually poke a peer that isn't reachable via
-// UDP broadcast — typically one on a different subnet added via settings.
-// Errors are swallowed the same way sendUnicastHello does; the UI should
-// retry on the next tick.
+// broadcasts), this is the entry point for caller-driven probes — manual
+// peers added by the user, or pinned peers we want to ping while in
+// stealth. Bypasses HideFromDiscovery: the caller has explicitly chosen
+// to reveal us to this destination.
 func (m *Messenger) UnicastHello(addr netip.Addr, port uint16) {
 	if port == 0 {
 		port = protocol.DefaultPort
 	}
-	m.sendUnicastHello(addr, port)
+	m.writeUnicastHello(addr, port)
 }
 
-// sendUnicastHello sends a HELLO reply to (addr, port). Picks HELLO_UNICAST
-// or HELLO_PORT_UNICAST based on the local bind port. If the messenger holds
-// a v2 identity, a 0x07 unicast is sent alongside so the peer learns our key.
-//
-// Suppressed when HideFromDiscovery is on — the responder side stays silent
-// so an active probe (broadcast HELLO) doesn't unmask us.
-func (m *Messenger) sendUnicastHello(addr netip.Addr, port uint16) {
-	if m.conn == nil || m.isHidden() {
+// sendUnicastHelloReply is the dispatch-side auto-reply path. Suppressed
+// when HideFromDiscovery is on, EXCEPT when peerPub identifies a peer we
+// have pinned — that's how a paired stealth peer keeps "answering its
+// friends without unmasking to strangers". peerPub may be nil for legacy
+// 0x01..0x05 paths, in which case the bypass never kicks in.
+func (m *Messenger) sendUnicastHelloReply(addr netip.Addr, port uint16, peerPub ed25519.PublicKey) {
+	if m.conn == nil {
+		return
+	}
+	if m.isHidden() {
+		if peerPub == nil || m.isPubKeyPinned == nil || !m.isPubKeyPinned(peerPub) {
+			return
+		}
+	}
+	m.writeUnicastHello(addr, port)
+}
+
+// writeUnicastHello is the raw send. Always emits, no stealth check —
+// callers above are responsible for the gate.
+func (m *Messenger) writeUnicastHello(addr netip.Addr, port uint16) {
+	if m.conn == nil {
 		return
 	}
 	msg := protocol.BuddyMessage{

@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/netip"
 	"strings"
+	"time"
 
 	"dukto/internal/discovery"
 	"dukto/internal/identity"
@@ -73,16 +74,41 @@ func (a *App) LocalAddresses() []string {
 	return out
 }
 
-// pokeManualPeers unicasts a HELLO to each configured manual peer IP. Runs
-// on the same cadence as the broadcast HELLO ticker. Bad entries are logged
-// once and skipped; bad format errors are silent (the setter validates).
+// pokeManualPeers unicasts a HELLO to each configured manual peer IP and
+// to each pinned peer with a fresh LastSeenAddr. Runs on the same cadence
+// as the broadcast HELLO ticker. Bad entries are logged once and skipped;
+// bad format errors are silent (the setter validates).
+//
+// Folding pinned peers into the same loop keeps stealth Dukto reachable
+// for friends: even when broadcast is suppressed, paired peers receive
+// our unicast HELLO at their last known IP and their UI shows us online.
+// LastSeenAddr is dropped after [PinnedAddressTTL] to bound the leak if
+// a friend's IP got recycled.
 func (a *App) pokeManualPeers() {
-	for _, s := range a.settings.Values().ManualPeers {
+	probed := map[string]struct{}{}
+	send := func(s string) {
+		if s == "" {
+			return
+		}
+		if _, dup := probed[s]; dup {
+			return
+		}
+		probed[s] = struct{}{}
 		addr, port, err := parseManualPeer(s)
 		if err != nil {
-			continue
+			return
 		}
 		a.messenger.UnicastHello(addr, port)
+	}
+	for _, s := range a.settings.Values().ManualPeers {
+		send(s)
+	}
+	cutoff := time.Now().Add(-PinnedAddressTTL)
+	for _, p := range a.settings.Values().PinnedPeers {
+		if p.LastSeenAddr == "" || p.LastSeenAt.Before(cutoff) {
+			continue
+		}
+		send(p.LastSeenAddr)
 	}
 }
 

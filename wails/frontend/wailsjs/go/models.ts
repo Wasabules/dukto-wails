@@ -95,6 +95,9 @@ export namespace settings {
 	    label?: string;
 	    // Go type: time
 	    pinnedAt: any;
+	    lastSeenAddr?: string;
+	    // Go type: time
+	    lastSeenAt?: any;
 	
 	    static createFrom(source: any = {}) {
 	        return new PinnedPeer(source);
@@ -106,6 +109,8 @@ export namespace settings {
 	        this.ed25519PubHex = source["ed25519PubHex"];
 	        this.label = source["label"];
 	        this.pinnedAt = this.convertValues(source["pinnedAt"], null);
+	        this.lastSeenAddr = source["lastSeenAddr"];
+	        this.lastSeenAt = this.convertValues(source["lastSeenAt"], null);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

@@ -116,6 +116,7 @@ class DuktoEngine(private val app: Context) {
         identity = identity,
         hideFromDiscovery = { settings.state.value.hideFromDiscovery },
         onIdentityRotation = ::onPeerIdentityRotation,
+        isPubKeyPinned = ::isEd25519PubKeyPinned,
     )
     val peers = messenger.peers
 
@@ -186,9 +187,22 @@ class DuktoEngine(private val app: Context) {
         scope.launch {
             merge(server.events, sender.events).collect(::onTransferEvent)
         }
+        // Observe verified peer sightings to refresh LastSeenAddr on
+        // pinned peers — drives the unicast probe targets without
+        // any UI input from the user.
+        scope.launch {
+            messenger.events.collect { ev ->
+                if (ev is dev.wasabules.dukto.discovery.PeerEvent.Found) {
+                    if (ev.peer.v2Capable && ev.peer.pubKey != null) {
+                        notePinnedPeerSeen(ev.peer)
+                    }
+                }
+            }
+        }
         messenger.sayHello()
         // Manual peers are out of broadcast range, so we poke them with
         // a unicast HELLO on the same cadence as the broadcast loop.
+        // Pinned peers with a fresh LastSeenAddr are folded in too.
         scope.launch { manualPeerPokeLoop() }
     }
 
@@ -200,11 +214,55 @@ class DuktoEngine(private val app: Context) {
     }
 
     private fun pokeManualPeers() {
-        for (raw in settings.state.value.manualPeers) {
-            val (host, port) = parseManualPeerString(raw) ?: continue
-            val addr = runCatching { java.net.InetAddress.getByName(host) }.getOrNull() ?: continue
+        val probed = HashSet<String>()
+        fun send(raw: String) {
+            if (raw.isBlank() || !probed.add(raw)) return
+            val (host, port) = parseManualPeerString(raw) ?: return
+            val addr = runCatching { java.net.InetAddress.getByName(host) }.getOrNull() ?: return
             messenger.unicastHello(addr, port)
         }
+        // Manual peers are unconditional; pinned peers piggy-back on
+        // the same loop so paired stealth peers stay reachable. The
+        // TTL bounds the leak when a friend's IP gets recycled.
+        for (raw in settings.state.value.manualPeers) send(raw)
+        val cutoff = System.currentTimeMillis() -
+            dev.wasabules.dukto.settings.LastSeenTtlMs
+        for (rec in settings.state.value.pinnedPeers.values) {
+            if (rec.lastSeenAddr.isBlank() || rec.lastSeenAt < cutoff) continue
+            send(rec.lastSeenAddr)
+        }
+    }
+
+    /** Auto-update LastSeenAddr/LastSeenAt when we see a verified
+     *  0x06/0x07 from a paired peer. Skip the disk write when the
+     *  address is unchanged AND the timestamp is still fresh — saves
+     *  churn on every 10s re-emission. */
+    private fun notePinnedPeerSeen(peer: dev.wasabules.dukto.discovery.Peer) {
+        val pub = peer.pubKey ?: return
+        if (pub.size != 32) return
+        val fp = dev.wasabules.dukto.identity.fingerprintOf(pub)
+        val current = settings.state.value.pinnedPeers[fp] ?: return
+        val addr = "${peer.address.hostAddress}:${peer.port}"
+        val now = System.currentTimeMillis()
+        if (current.lastSeenAddr == addr && now - current.lastSeenAt < 60 * 60 * 1000L) {
+            return
+        }
+        settings.update { st ->
+            val rec = st.pinnedPeers[fp] ?: return@update st
+            st.copy(
+                pinnedPeers = st.pinnedPeers + (
+                    fp to rec.copy(lastSeenAddr = addr, lastSeenAt = now)
+                ),
+            )
+        }
+    }
+
+    /** Hook called by the Messenger to decide whether to bypass
+     *  HideFromDiscovery on an inbound 0x06/0x07 reply. */
+    private fun isEd25519PubKeyPinned(pub: ByteArray): Boolean {
+        if (pub.size != 32) return false
+        val fp = dev.wasabules.dukto.identity.fingerprintOf(pub)
+        return settings.state.value.pinnedPeers.containsKey(fp)
     }
 
     private fun parseManualPeerString(s: String): Pair<String, Int>? {

@@ -109,6 +109,11 @@ class Messenger(
         oldPub: ByteArray,
         newPub: ByteArray,
     ) -> Unit = { _, _, _ -> },
+    /** Returns true when [pub] (raw 32-byte Ed25519) is in our TOFU
+     *  table. Used to bypass HideFromDiscovery on the auto-reply
+     *  path: a paired stealth peer answers its friends' probes while
+     *  staying silent to strangers. */
+    private val isPubKeyPinned: (ByteArray) -> Boolean = { false },
 ) {
     private val scope = CoroutineScope(Dispatchers.IO)
 
@@ -167,12 +172,15 @@ class Messenger(
     /**
      * Send a unicast HELLO to a single peer. Used to poke manual peers
      * (cross-subnet / out-of-broadcast) so they learn we exist even when
-     * UDP broadcast can't reach. Suppressed when HideFromDiscovery is on,
-     * for the same reason as the regular reply path.
+     * UDP broadcast can't reach. **Bypasses HideFromDiscovery** —
+     * the caller (engine, manual peer poke, paired peer poke) has
+     * already decided that this destination is appropriate; in stealth
+     * mode we still want to reach our pinned friends and our manual
+     * peers, just not strangers.
      */
     fun unicastHello(dst: InetAddress, dstPort: Int = DEFAULT_PORT) {
         scope.launch {
-            socket?.let { s -> runCatching { sendHelloUnicast(s, dst, dstPort) } }
+            socket?.let { s -> runCatching { writeHelloUnicast(s, dst, dstPort) } }
         }
     }
 
@@ -226,7 +234,10 @@ class Messenger(
                 )
                 upsertPeer(peer)
                 if (msg.type == MessageType.HelloBroadcast || msg.type == MessageType.HelloPortBroadcast) {
-                    runCatching { sendHelloUnicast(s, src, peerPort) }
+                    // Legacy 0x01/0x04: no key in this datagram, but we
+                    // may have a v2 key stamped from a recent 0x06 by
+                    // the same IP — pass it for the paired-bypass check.
+                    runCatching { sendHelloUnicastReply(s, src, peerPort, knownKey) }
                 }
             }
             MessageType.Goodbye -> {
@@ -255,7 +266,10 @@ class Messenger(
                 )
                 upsertPeer(peer)
                 if (msg.type == MessageType.HelloPortKeyBroadcast) {
-                    runCatching { sendHelloUnicast(s, src, msg.port) }
+                    // Verified pubkey in hand: paired-bypass uses it
+                    // directly, so a paired stealth peer answers and
+                    // an unpaired stealth peer stays silent.
+                    runCatching { sendHelloUnicastReply(s, src, msg.port, pub) }
                 }
             }
         }
@@ -284,8 +298,28 @@ class Messenger(
         }
     }
 
-    private fun sendHelloUnicast(s: DatagramSocket, dst: InetAddress, dstPort: Int) {
-        if (hideFromDiscovery()) return
+    /**
+     * Auto-reply to an inbound HELLO. Suppressed by stealth UNLESS
+     * [peerPub] identifies a paired peer — that bypass keeps
+     * "answering my friends" working even when broadcast is off.
+     * Pass [peerPub] = null when the trigger is a legacy 0x01..0x05
+     * with no key material; the bypass then never kicks in.
+     */
+    private fun sendHelloUnicastReply(
+        s: DatagramSocket,
+        dst: InetAddress,
+        dstPort: Int,
+        peerPub: ByteArray?,
+    ) {
+        if (hideFromDiscovery()) {
+            if (peerPub == null || !isPubKeyPinned(peerPub)) return
+        }
+        writeHelloUnicast(s, dst, dstPort)
+    }
+
+    /** Raw unicast HELLO write. No stealth gate — callers above this
+     *  point own the gating policy. */
+    private fun writeHelloUnicast(s: DatagramSocket, dst: InetAddress, dstPort: Int) {
         val sig = signatureProvider()
         val msg = BuddyMessage(helloUnicastType(port), port = port, signature = sig)
         val bytes = msg.serialize()
