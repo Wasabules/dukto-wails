@@ -79,6 +79,11 @@
     type Peer,
     udpHelloCooldownSeconds as fetchUDPHelloCooldownSeconds,
     unblockPeer as rpcUnblockPeer,
+    unpinPeer as rpcUnpinPeer,
+    pinnedPeers,
+    refuseCleartext as fetchRefuseCleartext,
+    setRefuseCleartext as rpcSetRefuseCleartext,
+    onTOFUMismatch,
     whitelist as fetchWhitelist,
     whitelistEnabled as fetchWhitelistEnabled,
   } from './lib/dukto';
@@ -92,6 +97,7 @@
   import SettingsModal, { type SettingsTab } from './components/SettingsModal.svelte';
   import PreviewModal from './components/PreviewModal.svelte';
   import PairingModal from './components/PairingModal.svelte';
+  import TOFUMismatchModal from './components/TOFUMismatchModal.svelte';
   import PendingSessionModal from './components/PendingSessionModal.svelte';
   import ProgressStack from './components/ProgressStack.svelte';
   import Toast from './components/Toast.svelte';
@@ -144,6 +150,8 @@
   // New security state.
   let blockList: string[] = [];
   let confirmUnknown = false;
+  let refuseCleartext = false;
+  let pinned: import('./lib/dukto').PinnedPeer[] = [];
   let maxFiles = 0;
   let maxDepth = 0;
   let minDiskPct = 0;
@@ -164,6 +172,7 @@
   let previewItem: ReceivedItem | null = null;
   let settingsOpen = false;
   let pairingPeer: Peer | null = null;
+  let tofuAlert: import('./lib/dukto').TOFUMismatch | null = null;
   let settingsTab: SettingsTab = 'general';
   let qrData: string | null = null;
   $: if (settingsOpen && qrData === null) void loadQrCode();
@@ -284,6 +293,7 @@
       maxFiles, maxDepth, minDiskPct,
       tcpCooldown, udpCooldown,
       ifaces, allowedIfaces,
+      refuseCleartext, pinned,
     ] = await Promise.all([
       fetchSignature(),
       buddyName(),
@@ -308,6 +318,8 @@
       fetchUDPHelloCooldownSeconds(),
       fetchAvailableInterfaces(),
       fetchAllowedInterfaces(),
+      fetchRefuseCleartext(),
+      pinnedPeers(),
     ]);
     receiving.set(initialReceiving);
     const initial = await fetchPeers();
@@ -351,6 +363,18 @@
       draggedFiles = merged;
       showToast(`Queued ${paths.length} item(s). Pick a peer and hit Send.`);
     });
+
+    // Subscribe to TOFU-mismatch events outside wireEvents() because the
+    // payload is component-state not store-state — the alert is a modal
+    // owned by App.svelte directly.
+    const unsubTOFU = onTOFUMismatch((m) => {
+      tofuAlert = m;
+    });
+    const prevUnwire = unwire;
+    unwire = () => {
+      if (prevUnwire) prevUnwire();
+      unsubTOFU();
+    };
 
     WailsOnFileDrop(() => {}, true);
   });
@@ -552,6 +576,25 @@
     try {
       await rpcSetConfirmUnknownPeers(on);
       confirmUnknown = on;
+    } catch (e) {
+      showToast(`Failed: ${e}`);
+    }
+  }
+
+  async function toggleRefuseCleartext(on: boolean) {
+    try {
+      await rpcSetRefuseCleartext(on);
+      refuseCleartext = on;
+    } catch (e) {
+      showToast(`Failed: ${e}`);
+    }
+  }
+
+  async function unpinPeerByFingerprint(fp: string) {
+    try {
+      await rpcUnpinPeer(fp);
+      pinned = await pinnedPeers();
+      await refreshPeers();
     } catch (e) {
       showToast(`Failed: ${e}`);
     }
@@ -1015,6 +1058,8 @@
       {idleMinutes}
       {blockList}
       {confirmUnknown}
+      {refuseCleartext}
+      {pinned}
       {maxFiles}
       {maxDepth}
       {minDiskPct}
@@ -1052,6 +1097,8 @@
       onUnblockSig={unblockSig}
       onToggleConfirmUnknown={toggleConfirmUnknown}
       onForgetApprovals={forgetApprovals}
+      onToggleRefuseCleartext={toggleRefuseCleartext}
+      onUnpinPeer={unpinPeerByFingerprint}
       onMaxFilesChange={(n) => (maxFiles = n)}
       onCommitMaxFiles={commitMaxFiles}
       onMaxDepthChange={(n) => (maxDepth = n)}
@@ -1094,7 +1141,34 @@
   />
 
   {#if pairingPeer}
-    <PairingModal peer={pairingPeer} onClose={() => { pairingPeer = null; refreshPeers(); }} />
+    <PairingModal
+      peer={pairingPeer}
+      onClose={async () => {
+        pairingPeer = null;
+        try { pinned = await pinnedPeers(); } catch {}
+        await refreshPeers();
+      }}
+    />
+  {/if}
+
+  {#if tofuAlert}
+    <TOFUMismatchModal
+      mismatch={tofuAlert}
+      onClose={async () => {
+        tofuAlert = null;
+        try { pinned = await pinnedPeers(); } catch {}
+        await refreshPeers();
+      }}
+      onRepair={() => {
+        // Hand off to the pair flow — find the peer at that address and
+        // pop the PairingModal so the user can verify the new key OOB.
+        const target = tofuAlert;
+        tofuAlert = null;
+        if (!target) return;
+        const candidate = $peerList.find((p) => p.address === target.address);
+        if (candidate) pairingPeer = candidate;
+      }}
+    />
   {/if}
 
   <Toast message={$toast} />

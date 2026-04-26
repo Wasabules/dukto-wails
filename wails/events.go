@@ -23,6 +23,7 @@ const (
 	evtElementRejected  = "receive:rejected"
 	evtPendingSession   = "session:pending"
 	evtAuditAppended    = "audit:appended"
+	evtTOFUMismatch     = "tofu:mismatch"
 )
 
 // PeerView is the Wails-facing projection of a discovered peer. Unlike

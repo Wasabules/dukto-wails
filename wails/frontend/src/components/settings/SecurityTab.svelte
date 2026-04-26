@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { parseSignature } from '../../lib/dukto';
+  import { parseSignature, type PinnedPeer } from '../../lib/dukto';
 
   export let wlEnabled = false;
   export let wlList: string[] = [];
@@ -9,6 +9,8 @@
   export let idleMinutes = 0;
   export let blockList: string[] = [];
   export let confirmUnknown = false;
+  export let refuseCleartext = false;
+  export let pinned: PinnedPeer[] = [];
 
   export let onToggleWhitelist: (on: boolean) => void = () => {};
   export let onUntrustSig: (sig: string) => void = () => {};
@@ -22,6 +24,8 @@
   export let onUnblockSig: (sig: string) => void = () => {};
   export let onToggleConfirmUnknown: (on: boolean) => void = () => {};
   export let onForgetApprovals: () => void = () => {};
+  export let onToggleRefuseCleartext: (on: boolean) => void = () => {};
+  export let onUnpinPeer: (fingerprint: string) => void = () => {};
 
   function handleWhitelistChange(e: Event) {
     onToggleWhitelist((e.currentTarget as HTMLInputElement).checked);
@@ -37,6 +41,15 @@
   }
   function handleConfirmUnknownChange(e: Event) {
     onToggleConfirmUnknown((e.currentTarget as HTMLInputElement).checked);
+  }
+  function handleRefuseCleartextChange(e: Event) {
+    onToggleRefuseCleartext((e.currentTarget as HTMLInputElement).checked);
+  }
+
+  function fmtPinnedAt(ts: string): string {
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return ts;
+    return d.toLocaleString();
   }
 </script>
 
@@ -136,6 +149,39 @@
 </div>
 
 <div class="drawer-section">
+  <div class="addrs-title">Encrypted overlay (v2)</div>
+  <label class="check">
+    <input
+      type="checkbox"
+      checked={refuseCleartext}
+      on:change={handleRefuseCleartextChange}
+    />
+    Refuse cleartext transfers (require Noise XX)
+  </label>
+  <p class="hint">When on, peers must be paired (🔒) — sessions from v1 peers and unpaired v2 peers are dropped. Use the 🤝 button on the peer card to pair via a 5-word passphrase.</p>
+
+  <div class="addrs-title" style="margin-top: 12px">Paired peers</div>
+  {#if pinned.length > 0}
+    <ul class="pin-list">
+      {#each pinned as p (p.fingerprint)}
+        <li>
+          <div class="pin-row">
+            <div class="pin-meta">
+              <div class="pin-label" title={p.label}>{parseSignature(p.label).user || p.label || 'unnamed'}</div>
+              <code class="pin-fp">{p.fingerprint}</code>
+              <div class="pin-when">paired {fmtPinnedAt(p.pinnedAt)}</div>
+            </div>
+            <button class="secondary" type="button" on:click={() => onUnpinPeer(p.fingerprint)}>Unpin</button>
+          </div>
+        </li>
+      {/each}
+    </ul>
+  {:else}
+    <p class="empty">No paired peers yet. Tap 🤝 on a buddy card to bootstrap mutual trust via a one-shot 5-word code.</p>
+  {/if}
+</div>
+
+<div class="drawer-section">
   <div class="addrs-title">Auto-disable receiving after inactivity</div>
   <div class="row">
     <input
@@ -172,6 +218,47 @@
   .empty {
     color: var(--text-faint);
     font-size: 0.9rem;
+  }
+  .pin-list {
+    list-style: none;
+    padding: 0;
+    margin: 6px 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .pin-list li {
+    background: var(--code-bg);
+    border-radius: 6px;
+    padding: 8px 10px;
+  }
+  .pin-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .pin-meta {
+    flex: 1;
+    min-width: 0;
+  }
+  .pin-label {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pin-fp {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    user-select: all;
+  }
+  .pin-when {
+    font-size: 0.72rem;
+    color: var(--text-faint);
+    margin-top: 2px;
   }
   .hint {
     margin: 6px 0 0;

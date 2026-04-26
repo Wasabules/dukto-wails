@@ -5,13 +5,14 @@
   // fingerprint, so subsequent transfers run encrypted with no further
   // prompts.
 
-  import { startPairing, cancelPairing, pairWithPassphrase, type Peer } from '../lib/dukto';
+  import { startPairing, cancelPairing, pairWithPassphrase, pairingCodeQR, type Peer } from '../lib/dukto';
 
   export let peer: Peer;
   export let onClose: () => void = () => {};
 
   let mode: 'menu' | 'generate' | 'enter' = 'menu';
   let generated: string = '';
+  let qrDataUrl: string = '';
   let entered: string = '';
   let busy = false;
   let error: string = '';
@@ -21,6 +22,14 @@
     try {
       generated = await startPairing();
       mode = 'generate';
+      // Best-effort: ask the backend for a QR encoding so the Android
+      // pairing dialog can scan it instead of typing 5 words. Failure
+      // is non-fatal — we still show the text fallback.
+      try {
+        qrDataUrl = await pairingCodeQR(generated);
+      } catch {
+        qrDataUrl = '';
+      }
     } catch (err: any) {
       error = String(err?.message ?? err);
     } finally {
@@ -64,8 +73,13 @@
     {:else if mode === 'generate'}
       <p>Read this code out to the other peer (valid 60 seconds):</p>
       <pre class="code">{generated}</pre>
-      <p class="hint">The other peer types it on their device — once their handshake
-      lands the badge on this peer flips to 🔒.</p>
+      {#if qrDataUrl}
+        <div class="qr">
+          <img src={qrDataUrl} alt="Pairing QR code" />
+          <p class="hint">…or scan with the other peer's Dukto camera.</p>
+        </div>
+      {/if}
+      <p class="hint">Once their handshake lands the badge on this peer flips to 🔒.</p>
     {:else if mode === 'enter'}
       <p>Type the 5-word code the other peer just generated:</p>
       <input
@@ -125,6 +139,8 @@
     font-family: monospace;
   }
   .hint { color: var(--text-faint); font-size: 0.85rem; }
+  .qr { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 10px 0; }
+  .qr img { width: 220px; height: 220px; image-rendering: pixelated; background: #fff; padding: 8px; border-radius: 6px; }
   .error { color: var(--danger); font-size: 0.85rem; }
   .close {
     margin-top: 8px;

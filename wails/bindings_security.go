@@ -108,6 +108,18 @@ func (a *App) SetConfirmUnknownPeers(on bool) error {
 	return a.settings.Update(func(v *settings.Values) { v.ConfirmUnknownPeers = on })
 }
 
+// RefuseCleartext returns whether the v2 encrypted-only mode is enabled.
+func (a *App) RefuseCleartext() bool {
+	return a.settings.Values().RefuseCleartext
+}
+
+// SetRefuseCleartext toggles the v2 encrypted-only mode. When on, the
+// server drops every inbound session that isn't a Noise XX handshake
+// from a paired peer, and the sender refuses to dial unpaired peers.
+func (a *App) SetRefuseCleartext(on bool) error {
+	return a.settings.Update(func(v *settings.Values) { v.RefuseCleartext = on })
+}
+
 // ForgetApprovedPeers drops every cached approval so the next session from
 // each peer re-prompts.
 func (a *App) ForgetApprovedPeers() error {

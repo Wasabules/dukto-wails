@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -12,6 +13,9 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/skip2/go-qrcode"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"dukto/internal/audit"
 	"dukto/internal/eff"
@@ -32,9 +36,13 @@ import (
 // instead of plain XX so a first-contact peer can authenticate us via
 // the shared one-shot passphrase.
 func (a *App) upgradeServerConn(conn net.Conn) (net.Conn, bool, error) {
+	refuseCleartext := a.settings.Values().RefuseCleartext
 	if a.identity.Public == nil {
-		// No long-term identity loaded — we can't do v2 anyway, so always
-		// fall through to legacy.
+		// No long-term identity loaded — we can't do v2 anyway. If
+		// the user demands encryption, drop the connection.
+		if refuseCleartext {
+			return nil, false, errors.New("refuseCleartext: no v2 identity loaded")
+		}
 		return conn, false, nil
 	}
 	isV2, peeked, err := tunnel.PeekMagic(conn)
@@ -42,6 +50,9 @@ func (a *App) upgradeServerConn(conn net.Conn) (net.Conn, bool, error) {
 		return nil, false, fmt.Errorf("v2 peek: %w", err)
 	}
 	if !isV2 {
+		if refuseCleartext {
+			return nil, false, errors.New("refuseCleartext: peer used legacy session header")
+		}
 		// Returning the PeekedConn (which replays the 8 bytes on first
 		// reads) means the legacy parser sees an unmodified stream.
 		return &peeked, false, nil
@@ -59,6 +70,25 @@ func (a *App) upgradeServerConn(conn net.Conn) (net.Conn, bool, error) {
 	remote := sess.RemoteStatic()
 	if psk != nil {
 		_ = a.autoPinFromX25519(conn.RemoteAddr(), remote)
+	} else {
+		// TOFU mismatch detector: if we have a pinning record for this
+		// peer's IP and the new remote_static doesn't match, kill the
+		// session and surface a UI modal so the user can re-pair.
+		if mismatch := a.checkTOFUMismatch(conn.RemoteAddr(), remote); mismatch != nil {
+			_ = sess.Close()
+			a.emitTOFUMismatch(*mismatch)
+			return nil, false, fmt.Errorf("v2 fingerprint mismatch: %s", mismatch.NewFingerprint)
+		}
+		if refuseCleartext {
+			// Encrypted-only mode also requires the responder side to
+			// know the peer in advance: an unpinned v2 connection means
+			// we have no way to authenticate the remote_static beyond
+			// "it ran the handshake". Drop unless the peer is paired.
+			if !a.isPubKeyPinned(remote) {
+				_ = sess.Close()
+				return nil, false, errors.New("refuseCleartext: peer not paired")
+			}
+		}
 	}
 	a.recordEncryptedHandshake(conn.RemoteAddr(), remote)
 	return sess, true, nil
@@ -78,6 +108,21 @@ const pairingTTL = 60 * time.Second
 type pendingPairing struct {
 	psk     []byte
 	expires time.Time
+}
+
+// PairingCodeQR returns a PNG QR-code data URL encoding [passphrase].
+// The Android camera-pairing flow scans this directly. Caller is the UI
+// layer right after StartPairing — the passphrase plaintext is what's
+// encoded; the QR is just an alternate visual representation.
+func (a *App) PairingCodeQR(passphrase string) (string, error) {
+	if passphrase == "" {
+		return "", errors.New("PairingCodeQR: empty passphrase")
+	}
+	png, err := qrcode.Encode(passphrase, qrcode.Medium, 240)
+	if err != nil {
+		return "", err
+	}
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(png), nil
 }
 
 // StartPairing generates a fresh 5-word EFF passphrase, derives the PSK,
@@ -390,6 +435,101 @@ func (a *App) findPubKeyForAddress(address string) (ed25519.PublicKey, error) {
 		}
 	}
 	return nil, fmt.Errorf("no v2 pubkey advertised for %s yet — wait for a HELLO", addr)
+}
+
+// TOFUMismatch is the event payload sent to the frontend when an inbound
+// v2 handshake produces a remote_static that doesn't match the X25519
+// derived from the peer's already-pinned Ed25519 fingerprint.
+type TOFUMismatch struct {
+	Address           string `json:"address"`
+	OldFingerprint    string `json:"oldFingerprint"`
+	NewFingerprint    string `json:"newFingerprint"`
+	Label             string `json:"label,omitempty"`
+}
+
+// checkTOFUMismatch returns a non-nil mismatch description when:
+//   - the peer at remote already has a pinned record (matched by IP →
+//     advertised Ed25519 pubkey), AND
+//   - the X25519 just received via Noise doesn't match the X25519 derived
+//     from that pinned Ed25519 pubkey.
+//
+// Returns nil when the peer isn't pinned (legitimate first-contact) or
+// when the keys agree (legitimate paired session).
+func (a *App) checkTOFUMismatch(remote net.Addr, gotX25519 []byte) *TOFUMismatch {
+	addrStr := stripPort(remote.String())
+	pub, err := a.findPubKeyForAddress(addrStr)
+	if err != nil {
+		return nil // peer's HELLO not seen yet — first-contact, not a mismatch
+	}
+	pinned := a.settings.Values().PinnedPeers
+	advertisedFP := identity.Fingerprint(pub)
+	rec, ok := pinned[advertisedFP]
+	if !ok {
+		return nil // not previously pinned — no mismatch possible
+	}
+	pinPub, err := hex.DecodeString(rec.Ed25519PubHex)
+	if err != nil {
+		return nil
+	}
+	expected, err := identity.Ed25519PubToX25519Pub(ed25519.PublicKey(pinPub))
+	if err != nil {
+		return nil
+	}
+	if bytesEqual(expected[:], gotX25519) {
+		return nil
+	}
+	return &TOFUMismatch{
+		Address:        addrStr,
+		OldFingerprint: rec.Fingerprint,
+		NewFingerprint: identity.Fingerprint(pub),
+		Label:          rec.Label,
+	}
+}
+
+// emitTOFUMismatch ships the mismatch payload to the frontend so the UI
+// can pop a "Identity changed" modal. Also writes to the audit log so
+// the event is preserved across UI restarts.
+func (a *App) emitTOFUMismatch(m TOFUMismatch) {
+	if a.audit != nil {
+		a.audit.Append(audit.Entry{
+			Time: time.Now(),
+			Kind: "tofu_mismatch",
+			Peer: m.Label,
+			Reason: fmt.Sprintf("pinned=%s advertised=%s", m.OldFingerprint, m.NewFingerprint),
+		})
+	}
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, evtTOFUMismatch, m)
+	}
+}
+
+// isPubKeyPinned reports whether the X25519 pubkey [x25519] corresponds
+// to a peer in the TOFU table. Used by the refuseCleartext gate on the
+// responder side.
+func (a *App) isPubKeyPinned(x25519 []byte) bool {
+	pinned := a.settings.Values().PinnedPeers
+	for _, rec := range pinned {
+		pub, err := hex.DecodeString(rec.Ed25519PubHex)
+		if err != nil {
+			continue
+		}
+		expected, err := identity.Ed25519PubToX25519Pub(ed25519.PublicKey(pub))
+		if err != nil {
+			continue
+		}
+		if bytesEqual(expected[:], x25519) {
+			return true
+		}
+	}
+	return false
+}
+
+// stripPort returns the IP portion of an "ip:port" or "[v6]:port" string.
+func stripPort(s string) string {
+	if i := strings.LastIndex(s, ":"); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
 
 // fingerprintForAddress returns the Ed25519 fingerprint of the v2-capable

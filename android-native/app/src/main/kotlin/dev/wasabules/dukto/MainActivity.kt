@@ -25,6 +25,7 @@ import dev.wasabules.dukto.settings.ThemeMode
 import dev.wasabules.dukto.ui.BiometricLockScreen
 import dev.wasabules.dukto.ui.DuktoScreen
 import dev.wasabules.dukto.ui.PreviewScreen
+import dev.wasabules.dukto.ui.TofuMismatchDialog
 import dev.wasabules.dukto.ui.theme.DuktoTheme
 
 class MainActivity : FragmentActivity() {
@@ -132,6 +133,14 @@ class MainActivity : FragmentActivity() {
                 // Activity entry currently being previewed (back press / topbar arrow returns null).
                 var preview by remember { mutableStateOf<ActivityEntry?>(null) }
 
+                // Latest TOFU mismatch alert; cleared when the user closes
+                // the dialog. Subscribing here keeps the modal owned by the
+                // top-level UI so it composes above the bottom-sheet.
+                var tofuAlert by remember { mutableStateOf<TofuMismatch?>(null) }
+                LaunchedEffect(Unit) {
+                    engine.tofuMismatchEvents.collect { tofuAlert = it }
+                }
+
                 if (preview != null) {
                     PreviewScreen(entry = preview!!, onClose = { preview = null })
                 } else {
@@ -200,6 +209,26 @@ class MainActivity : FragmentActivity() {
                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                                 runCatching { engine.pairWithPassphrase(peer.address, peer.port, code) }
                             }
+                        },
+                        onRefuseCleartextChange = engine::setRefuseCleartext,
+                    )
+                }
+
+                tofuAlert?.let { alert ->
+                    TofuMismatchDialog(
+                        mismatch = alert,
+                        onClose = { tofuAlert = null },
+                        onUnpin = {
+                            engine.unpinPeer(alert.oldFingerprint)
+                            tofuAlert = null
+                        },
+                        onRepair = {
+                            // Reuse the existing pairing dialog by simulating
+                            // the 🤝 button on the peer card. We just clear
+                            // the alert; the user taps 🤝 themselves on the
+                            // peer that just produced the mismatch.
+                            engine.unpinPeer(alert.oldFingerprint)
+                            tofuAlert = null
                         },
                     )
                 }

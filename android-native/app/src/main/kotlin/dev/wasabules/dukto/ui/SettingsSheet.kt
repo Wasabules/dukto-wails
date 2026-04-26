@@ -74,6 +74,8 @@ fun SettingsSheet(
     biometricAvailable: Boolean,
     onBiometricLockChange: (Boolean) -> Unit,
     fingerprint: String,
+    onRefuseCleartextChange: (Boolean) -> Unit,
+    onUnpinPeer: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -229,6 +231,55 @@ fun SettingsSheet(
                             TextButton(onClick = { onUnblockPeer(sig) }) { Text("Unblock") }
                         }
                     }
+                }
+
+                // — Encrypted overlay (v2)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Encrypted overlay (v2)",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                ToggleRow(
+                    title = "Refuse cleartext transfers",
+                    subtitle = "Drop sessions from v1 peers and unpaired v2 peers. Only paired (🔒) peers can send.",
+                    checked = settings.refuseCleartext,
+                    onCheckedChange = onRefuseCleartextChange,
+                )
+                if (settings.pinnedPeers.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Paired peers", style = MaterialTheme.typography.titleSmall)
+                    settings.pinnedPeers.values
+                        .sortedByDescending { it.pinnedAt }
+                        .forEach { p ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(vertical = 2.dp),
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        if (p.label.isNotBlank()) p.label else p.fingerprint,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        p.fingerprint,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Text(
+                                        "paired " + DateFormat.getDateTimeInstance(
+                                            DateFormat.SHORT, DateFormat.SHORT,
+                                        ).format(Date(p.pinnedAt)),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                TextButton(onClick = { onUnpinPeer(p.fingerprint) }) { Text("Unpin") }
+                            }
+                        }
+                } else {
+                    Hint("No paired peers yet. Tap 🤝 on a buddy card to bootstrap mutual trust via a one-shot 5-word code.")
                 }
             }
 
