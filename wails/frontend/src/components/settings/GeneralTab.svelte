@@ -76,6 +76,11 @@
     />
     <button on:click={onCommitBuddyName}>Save</button>
   </div>
+  <small class="hint">
+    Empty = use the OS user name, which often is your real first/last name.
+    Set an explicit pseudonym for privacy on shared networks — every peer on
+    the LAN sees this string in your HELLO broadcasts.
+  </small>
 </label>
 <label>
   Destination directory

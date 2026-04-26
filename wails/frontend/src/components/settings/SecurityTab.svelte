@@ -10,6 +10,7 @@
   export let blockList: string[] = [];
   export let confirmUnknown = false;
   export let refuseCleartext = false;
+  export let hideFromDiscovery = false;
   export let pinned: PinnedPeer[] = [];
 
   export let onToggleWhitelist: (on: boolean) => void = () => {};
@@ -25,6 +26,7 @@
   export let onToggleConfirmUnknown: (on: boolean) => void = () => {};
   export let onForgetApprovals: () => void = () => {};
   export let onToggleRefuseCleartext: (on: boolean) => void = () => {};
+  export let onToggleHideFromDiscovery: (on: boolean) => void = () => {};
   export let onUnpinPeer: (fingerprint: string) => void = () => {};
 
   function handleWhitelistChange(e: Event) {
@@ -44,6 +46,9 @@
   }
   function handleRefuseCleartextChange(e: Event) {
     onToggleRefuseCleartext((e.currentTarget as HTMLInputElement).checked);
+  }
+  function handleHideFromDiscoveryChange(e: Event) {
+    onToggleHideFromDiscovery((e.currentTarget as HTMLInputElement).checked);
   }
 
   function fmtPinnedAt(ts: string): string {
@@ -146,6 +151,19 @@
     <button class="secondary" type="button" on:click={onForgetApprovals}>Forget approvals</button>
   </div>
   <p class="hint">Approved peers are remembered forever unless you click “Forget approvals”. Rejections auto-close after 60 s.</p>
+</div>
+
+<div class="drawer-section">
+  <div class="addrs-title">Discovery</div>
+  <label class="check">
+    <input
+      type="checkbox"
+      checked={hideFromDiscovery}
+      on:change={handleHideFromDiscoveryChange}
+    />
+    Hide me from network discovery
+  </label>
+  <p class="hint">When on, Dukto stops broadcasting HELLO and stops replying to probes. Other peers can't see you on the LAN unless they already know your IP (e.g. via Manual peers). You still see them, and incoming transfers from peers who do know your IP still work.</p>
 </div>
 
 <div class="drawer-section">

@@ -96,6 +96,10 @@ class Messenger(
      *  every reply sends a 0x07 unicast alongside the legacy ones. Inbound
      *  0x06/0x07 datagrams are accepted only after Ed25519 verification. */
     private val identity: Identity? = null,
+    /** Returns true to suppress every outbound HELLO (broadcast + unicast
+     *  reply + GOODBYE). Re-read on each emission so toggling at runtime
+     *  takes effect immediately. */
+    private val hideFromDiscovery: () -> Boolean = { false },
 ) {
     private val scope = CoroutineScope(Dispatchers.IO)
 
@@ -228,6 +232,7 @@ class Messenger(
     }
 
     private fun broadcastHello(s: DatagramSocket) {
+        if (hideFromDiscovery()) return
         val sig = signatureProvider()
         val msg = BuddyMessage(helloBroadcastType(port), port = port, signature = sig)
         val bytes = msg.serialize()
@@ -250,6 +255,7 @@ class Messenger(
     }
 
     private fun sendHelloUnicast(s: DatagramSocket, dst: InetAddress, dstPort: Int) {
+        if (hideFromDiscovery()) return
         val sig = signatureProvider()
         val msg = BuddyMessage(helloUnicastType(port), port = port, signature = sig)
         val bytes = msg.serialize()
@@ -267,6 +273,7 @@ class Messenger(
     }
 
     private fun sendGoodbye(s: DatagramSocket) {
+        if (hideFromDiscovery()) return
         val bytes = BuddyMessage.goodbye().serialize()
         for (bcast in broadcastAddresses()) {
             runCatching { s.send(DatagramPacket(bytes, bytes.size, bcast, DEFAULT_PORT)) }

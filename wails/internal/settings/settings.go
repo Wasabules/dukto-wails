@@ -150,6 +150,15 @@ type Values struct {
 	// paired. Lets a privacy-conscious user opt out of the legacy
 	// cleartext fallback entirely.
 	RefuseCleartext bool `json:"refuseCleartext,omitempty"`
+
+	// HideFromDiscovery, when true, makes the Messenger skip the
+	// periodic HELLO broadcast, skip the unicast HELLO reply to
+	// incoming broadcasts (so a peer who probes us learns nothing),
+	// and skip the GOODBYE on shutdown. We still *listen*, so we
+	// see other peers and can still send to them — via the regular
+	// UI or via ManualPeers. The result is invisibility to passive
+	// sniffers and to peers who don't already know our IP.
+	HideFromDiscovery bool `json:"hideFromDiscovery,omitempty"`
 }
 
 // PinnedPeer is one entry in the TOFU table.

@@ -41,6 +41,7 @@ class SettingsStore(context: Context) {
             putBoolean(KEY_BIOMETRIC_LOCK, next.biometricLockEnabled)
             putString(KEY_PINNED_PEERS, encodePinned(next.pinnedPeers))
             putBoolean(KEY_REFUSE_CLEARTEXT, next.refuseCleartext)
+            putBoolean(KEY_HIDE_FROM_DISCOVERY, next.hideFromDiscovery)
         }
         _state.value = next
     }
@@ -71,6 +72,7 @@ class SettingsStore(context: Context) {
         biometricLockEnabled = prefs.getBoolean(KEY_BIOMETRIC_LOCK, false),
         pinnedPeers = decodePinned(prefs.getString(KEY_PINNED_PEERS, null)),
         refuseCleartext = prefs.getBoolean(KEY_REFUSE_CLEARTEXT, false),
+        hideFromDiscovery = prefs.getBoolean(KEY_HIDE_FROM_DISCOVERY, false),
     )
 
     private companion object {
@@ -88,6 +90,7 @@ class SettingsStore(context: Context) {
         const val KEY_ACTIVITY_JSON = "activity_json"
         const val KEY_PINNED_PEERS = "pinned_peers_json"
         const val KEY_REFUSE_CLEARTEXT = "refuse_cleartext"
+        const val KEY_HIDE_FROM_DISCOVERY = "hide_from_discovery"
 
         // Mirrors the Wails default; conservative against Windows-only nasties.
         const val DEFAULT_BLOCKED_EXT = "exe,bat,cmd,com,scr,msi,ps1,vbs,jse,lnk"
@@ -142,6 +145,14 @@ data class Settings(
      * sender refuses to dial unpaired peers. Off by default.
      */
     val refuseCleartext: Boolean = false,
+    /**
+     * Stealth mode for UDP discovery. When true the messenger stops
+     * broadcasting HELLO, stops replying to inbound probes, and skips
+     * the goodbye on shutdown. We still listen so we see other peers
+     * and can dial them via the regular UI; we just go invisible to
+     * passive sniffers. Off by default.
+     */
+    val hideFromDiscovery: Boolean = false,
 )
 
 data class PinnedPeer(

@@ -75,6 +75,7 @@ fun SettingsSheet(
     onBiometricLockChange: (Boolean) -> Unit,
     fingerprint: String,
     onRefuseCleartextChange: (Boolean) -> Unit,
+    onHideFromDiscoveryChange: (Boolean) -> Unit,
     onUnpinPeer: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -116,7 +117,11 @@ fun SettingsSheet(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                 )
-                Hint("Empty = use the device name. Changes take effect on the next discovery broadcast.")
+                Hint(
+                    "Empty = use the device name. Set an explicit pseudonym for " +
+                        "privacy on shared networks — every peer on the LAN sees this " +
+                        "string in your HELLO broadcasts.",
+                )
                 if (fingerprint.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
                     FingerprintRow(fingerprint)
@@ -232,6 +237,21 @@ fun SettingsSheet(
                         }
                     }
                 }
+
+                // — Discovery
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Discovery",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                ToggleRow(
+                    title = "Hide me from network discovery",
+                    subtitle = "Stop broadcasting HELLO and stop replying to probes. " +
+                        "Other peers can't see you on the LAN unless they already know your IP. " +
+                        "You still see them, and incoming transfers from peers who do know your IP still work.",
+                    checked = settings.hideFromDiscovery,
+                    onCheckedChange = onHideFromDiscoveryChange,
+                )
 
                 // — Encrypted overlay (v2)
                 Spacer(Modifier.height(8.dp))

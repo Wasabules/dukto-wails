@@ -84,6 +84,8 @@
     pinnedPeers,
     refuseCleartext as fetchRefuseCleartext,
     setRefuseCleartext as rpcSetRefuseCleartext,
+    hideFromDiscovery as fetchHideFromDiscovery,
+    setHideFromDiscovery as rpcSetHideFromDiscovery,
     onTOFUMismatch,
     whitelist as fetchWhitelist,
     whitelistEnabled as fetchWhitelistEnabled,
@@ -153,6 +155,7 @@
   let blockList: string[] = [];
   let confirmUnknown = false;
   let refuseCleartext = false;
+  let hideFromDiscovery = false;
   let pinned: import('./lib/dukto').PinnedPeer[] = [];
   let maxFiles = 0;
   let maxDepth = 0;
@@ -296,7 +299,7 @@
       maxFiles, maxDepth, minDiskPct,
       tcpCooldown, udpCooldown,
       ifaces, allowedIfaces,
-      refuseCleartext, pinned,
+      refuseCleartext, pinned, hideFromDiscovery,
     ] = await Promise.all([
       fetchSignature(),
       buddyName(),
@@ -323,6 +326,7 @@
       fetchAllowedInterfaces(),
       fetchRefuseCleartext(),
       pinnedPeers(),
+      fetchHideFromDiscovery(),
     ]);
     receiving.set(initialReceiving);
     const initial = await fetchPeers();
@@ -588,6 +592,15 @@
     try {
       await rpcSetRefuseCleartext(on);
       refuseCleartext = on;
+    } catch (e) {
+      showToast(`Failed: ${e}`);
+    }
+  }
+
+  async function toggleHideFromDiscovery(on: boolean) {
+    try {
+      await rpcSetHideFromDiscovery(on);
+      hideFromDiscovery = on;
     } catch (e) {
       showToast(`Failed: ${e}`);
     }
@@ -1063,6 +1076,7 @@
       {blockList}
       {confirmUnknown}
       {refuseCleartext}
+      {hideFromDiscovery}
       {pinned}
       {maxFiles}
       {maxDepth}
@@ -1102,6 +1116,7 @@
       onToggleConfirmUnknown={toggleConfirmUnknown}
       onForgetApprovals={forgetApprovals}
       onToggleRefuseCleartext={toggleRefuseCleartext}
+      onToggleHideFromDiscovery={toggleHideFromDiscovery}
       onUnpinPeer={unpinPeerByFingerprint}
       onMaxFilesChange={(n) => (maxFiles = n)}
       onCommitMaxFiles={commitMaxFiles}

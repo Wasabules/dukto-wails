@@ -211,6 +211,7 @@ class MainActivity : FragmentActivity() {
                             }
                         },
                         onRefuseCleartextChange = engine::setRefuseCleartext,
+                        onHideFromDiscoveryChange = engine::setHideFromDiscovery,
                     )
                 }
 

@@ -110,6 +110,13 @@ export const refuseCleartext = () => App.RefuseCleartext() as Promise<boolean>;
 export const setRefuseCleartext = (on: boolean) =>
   App.SetRefuseCleartext(on) as Promise<void>;
 
+// "Hide from discovery" toggle — when on, the messenger stops emitting
+// HELLO datagrams. We still listen, so peers we already know about
+// stay visible to us, but we go invisible to passive sniffers.
+export const hideFromDiscovery = () => App.HideFromDiscovery() as Promise<boolean>;
+export const setHideFromDiscovery = (on: boolean) =>
+  App.SetHideFromDiscovery(on) as Promise<void>;
+
 // PSK pairing flow (Noise XXpsk2 + EFF wordlist) — see docs/SECURITY_v2.md.
 // startPairing arms the responder side with a 30-second one-shot PSK and
 // returns the human-readable 5-word passphrase. The caller reads it out

@@ -80,6 +80,16 @@
     <p class="target">
       To <strong>{peerLabel(selectedPeer)}</strong>
     </p>
+    {#if !selectedPeer.paired}
+      <div class="ct-warn">
+        ⚠️ <strong>Cleartext.</strong>
+        {#if selectedPeer.v2Capable}
+          This peer supports encryption but isn't paired yet — pair via the ⋮ menu to encrypt future sends.
+        {:else}
+          This peer doesn't run a v2 Dukto — bytes go on the wire in clear. Anyone on the LAN can read them.
+        {/if}
+      </div>
+    {/if}
     <label>
       Text snippet
       <textarea
@@ -144,6 +154,16 @@
   .empty {
     color: var(--text-faint);
     font-size: 0.9rem;
+  }
+  .ct-warn {
+    margin: 6px 0;
+    padding: 6px 10px;
+    border: 1px solid var(--warn, #d39e00);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--warn, #d39e00) 12%, transparent);
+    font-size: 0.82rem;
+    color: var(--text);
+    line-height: 1.35;
   }
   label {
     display: block;

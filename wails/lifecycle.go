@@ -29,11 +29,12 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
 	a.messenger = discovery.New(discovery.Config{
-		Port:          protocol.DefaultPort,
-		SignatureFunc: a.currentSignature,
-		HelloCooldown: time.Duration(a.settings.Values().UDPHelloCooldownSeconds) * time.Second,
-		IdentityPub:   a.identity.Public,
-		IdentityPriv:  a.identity.Private,
+		Port:              protocol.DefaultPort,
+		SignatureFunc:     a.currentSignature,
+		HelloCooldown:     time.Duration(a.settings.Values().UDPHelloCooldownSeconds) * time.Second,
+		IdentityPub:       a.identity.Public,
+		IdentityPriv:      a.identity.Private,
+		HideFromDiscovery: a.settings.Values().HideFromDiscovery,
 	})
 	if err := a.messenger.Start(ctx); err != nil {
 		log.Printf("dukto: discovery start: %v", err)

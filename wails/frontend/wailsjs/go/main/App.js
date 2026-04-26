@@ -94,6 +94,10 @@ export function HasCustomAvatar() {
   return window['go']['main']['App']['HasCustomAvatar']();
 }
 
+export function HideFromDiscovery() {
+  return window['go']['main']['App']['HideFromDiscovery']();
+}
+
 export function History() {
   return window['go']['main']['App']['History']();
 }
@@ -252,6 +256,10 @@ export function SetConfirmUnknownPeers(arg1) {
 
 export function SetDestDir(arg1) {
   return window['go']['main']['App']['SetDestDir'](arg1);
+}
+
+export function SetHideFromDiscovery(arg1) {
+  return window['go']['main']['App']['SetHideFromDiscovery'](arg1);
 }
 
 export function SetIdleAutoDisableMinutes(arg1) {

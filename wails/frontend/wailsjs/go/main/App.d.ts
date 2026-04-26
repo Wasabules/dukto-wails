@@ -50,6 +50,8 @@ export function ForgetApprovedPeers():Promise<void>;
 
 export function HasCustomAvatar():Promise<boolean>;
 
+export function HideFromDiscovery():Promise<boolean>;
+
 export function History():Promise<Array<Record<string, any>>>;
 
 export function IdleAutoDisableMinutes():Promise<number>;
@@ -129,6 +131,8 @@ export function SetCloseToTray(arg1:boolean):Promise<void>;
 export function SetConfirmUnknownPeers(arg1:boolean):Promise<void>;
 
 export function SetDestDir(arg1:string):Promise<void>;
+
+export function SetHideFromDiscovery(arg1:boolean):Promise<void>;
 
 export function SetIdleAutoDisableMinutes(arg1:number):Promise<void>;
 
