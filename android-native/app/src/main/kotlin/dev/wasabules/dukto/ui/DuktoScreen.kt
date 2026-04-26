@@ -126,6 +126,7 @@ fun DuktoScreen(
     var settingsOpen by remember { mutableStateOf(false) }
     var sendSheetPeer by remember { mutableStateOf<Peer?>(null) }
     var pairingPeer by remember { mutableStateOf<Peer?>(null) }
+    var trustConfirmPeer by remember { mutableStateOf<Peer?>(null) }
 
     Scaffold(
         topBar = {
@@ -190,11 +191,18 @@ fun DuktoScreen(
                             peer = peer,
                             paired = paired,
                             onClick = { sendSheetPeer = peer },
-                            onTogglePair = if (peer.v2Capable && peer.fingerprint.isNotEmpty()) {
-                                {
-                                    if (paired) onUnpinPeer?.invoke(peer.fingerprint)
-                                    else onPinPeer?.invoke(peer)
-                                }
+                            // Paired → menu offers Unpair (direct, no
+                            // confirmation; the user can re-pair anytime).
+                            onTogglePair = if (paired && onUnpinPeer != null && peer.fingerprint.isNotEmpty()) {
+                                { onUnpinPeer.invoke(peer.fingerprint) }
+                            } else null,
+                            // Unpaired → "Trust as-is" goes through the
+                            // confirmation dialog so the user reads the
+                            // TOFU caveats before pinning.
+                            onStartTrustConfirm = if (
+                                !paired && peer.v2Capable && peer.fingerprint.isNotEmpty() && onPinPeer != null
+                            ) {
+                                { trustConfirmPeer = peer }
                             } else null,
                             onStartPskPair = if (
                                 !paired && peer.v2Capable && peer.fingerprint.isNotEmpty() &&
@@ -290,6 +298,18 @@ fun DuktoScreen(
                 )
             }
         }
+
+        trustConfirmPeer?.let { p ->
+            TrustFingerprintDialog(
+                peerLabel = p.signature,
+                fingerprint = p.fingerprint,
+                onConfirm = {
+                    onPinPeer?.invoke(p)
+                    trustConfirmPeer = null
+                },
+                onCancel = { trustConfirmPeer = null },
+            )
+        }
     }
 }
 
@@ -302,6 +322,7 @@ private fun PeerRow(
     onClick: () -> Unit,
     onTogglePair: (() -> Unit)? = null,
     onStartPskPair: (() -> Unit)? = null,
+    onStartTrustConfirm: (() -> Unit)? = null,
 ) {
     Card(
         modifier = Modifier
@@ -367,10 +388,11 @@ private fun PeerRow(
                     }
                 }
             }
-            if (onStartPskPair != null || onTogglePair != null) {
+            if (onStartPskPair != null || onTogglePair != null || onStartTrustConfirm != null) {
                 PeerActionMenu(
                     paired = paired,
                     onStartPskPair = onStartPskPair,
+                    onStartTrustConfirm = onStartTrustConfirm,
                     onTogglePair = onTogglePair,
                 )
             }
@@ -387,6 +409,7 @@ private fun PeerRow(
 private fun PeerActionMenu(
     paired: Boolean,
     onStartPskPair: (() -> Unit)?,
+    onStartTrustConfirm: (() -> Unit)?,
     onTogglePair: (() -> Unit)?,
 ) {
     var open by remember { mutableStateOf(false) }
@@ -409,10 +432,10 @@ private fun PeerActionMenu(
                         onClick = { open = false; onStartPskPair() },
                     )
                 }
-                if (onTogglePair != null) {
+                if (onStartTrustConfirm != null) {
                     DropdownMenuItem(
                         text = { Text("Trust fingerprint as-is") },
-                        onClick = { open = false; onTogglePair() },
+                        onClick = { open = false; onStartTrustConfirm() },
                     )
                 }
             }

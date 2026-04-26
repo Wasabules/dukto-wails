@@ -21,6 +21,11 @@
   export let onToggleBroadcastMode: (on: boolean) => void = () => {};
   export let onPairChange: () => void = () => {};
   export let onLaunchPskPair: (p: Peer) => void = () => {};
+  // Routed through a confirmation modal in App.svelte so the user can
+  // see why TOFU is the weaker option before pinning. When this prop
+  // is set the menu calls onLaunchTrustConfirm(p) instead of toggling
+  // the pin directly.
+  export let onLaunchTrustConfirm: (p: Peer) => void = () => {};
 
   // Single-open overflow menu — only one peer card's encryption menu is
   // open at a time. Tracked by peerKey so the right pop closes when the
@@ -176,7 +181,7 @@
                       <button type="button" on:click|stopPropagation={() => { closeMenu(k); onLaunchPskPair(p); }}>
                         Pair via 5-word code…
                       </button>
-                      <button type="button" on:click|stopPropagation={() => { closeMenu(k); togglePair(p); }}>
+                      <button type="button" on:click|stopPropagation={() => { closeMenu(k); onLaunchTrustConfirm(p); }}>
                         Trust fingerprint as-is
                       </button>
                     {/if}

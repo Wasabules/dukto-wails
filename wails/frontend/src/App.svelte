@@ -80,6 +80,7 @@
     udpHelloCooldownSeconds as fetchUDPHelloCooldownSeconds,
     unblockPeer as rpcUnblockPeer,
     unpinPeer as rpcUnpinPeer,
+    pinPeer,
     pinnedPeers,
     refuseCleartext as fetchRefuseCleartext,
     setRefuseCleartext as rpcSetRefuseCleartext,
@@ -98,6 +99,7 @@
   import PreviewModal from './components/PreviewModal.svelte';
   import PairingModal from './components/PairingModal.svelte';
   import TOFUMismatchModal from './components/TOFUMismatchModal.svelte';
+  import TrustFingerprintModal from './components/TrustFingerprintModal.svelte';
   import PendingSessionModal from './components/PendingSessionModal.svelte';
   import ProgressStack from './components/ProgressStack.svelte';
   import Toast from './components/Toast.svelte';
@@ -172,6 +174,7 @@
   let previewItem: ReceivedItem | null = null;
   let settingsOpen = false;
   let pairingPeer: Peer | null = null;
+  let trustConfirmPeer: Peer | null = null;
   let tofuAlert: import('./lib/dukto').TOFUMismatch | null = null;
   let settingsTab: SettingsTab = 'general';
   let qrData: string | null = null;
@@ -1006,6 +1009,7 @@
     onTrustPeer={trustPeer}
     onPairChange={refreshPeers}
     onLaunchPskPair={(p) => (pairingPeer = p)}
+    onLaunchTrustConfirm={(p) => (trustConfirmPeer = p)}
     onToggleBroadcastMode={(on) => broadcastMode.set(on)}
   />
 
@@ -1147,6 +1151,25 @@
         pairingPeer = null;
         try { pinned = await pinnedPeers(); } catch {}
         await refreshPeers();
+      }}
+    />
+  {/if}
+
+  {#if trustConfirmPeer}
+    <TrustFingerprintModal
+      peer={trustConfirmPeer}
+      onClose={() => (trustConfirmPeer = null)}
+      onConfirm={async () => {
+        const target = trustConfirmPeer;
+        trustConfirmPeer = null;
+        if (!target?.fingerprint) return;
+        try {
+          await pinPeer(target.fingerprint, target.address);
+          pinned = await pinnedPeers();
+          await refreshPeers();
+        } catch (e) {
+          showToast(`Pin failed: ${e}`);
+        }
       }}
     />
   {/if}
