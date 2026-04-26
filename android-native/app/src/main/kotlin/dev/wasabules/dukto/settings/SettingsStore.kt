@@ -42,6 +42,7 @@ class SettingsStore(context: Context) {
             putString(KEY_PINNED_PEERS, encodePinned(next.pinnedPeers))
             putBoolean(KEY_REFUSE_CLEARTEXT, next.refuseCleartext)
             putBoolean(KEY_HIDE_FROM_DISCOVERY, next.hideFromDiscovery)
+            putString(KEY_MANUAL_PEERS, next.manualPeers.joinToString("\n"))
         }
         _state.value = next
     }
@@ -73,6 +74,8 @@ class SettingsStore(context: Context) {
         pinnedPeers = decodePinned(prefs.getString(KEY_PINNED_PEERS, null)),
         refuseCleartext = prefs.getBoolean(KEY_REFUSE_CLEARTEXT, false),
         hideFromDiscovery = prefs.getBoolean(KEY_HIDE_FROM_DISCOVERY, false),
+        manualPeers = prefs.getString(KEY_MANUAL_PEERS, "")
+            ?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty(),
     )
 
     private companion object {
@@ -91,6 +94,7 @@ class SettingsStore(context: Context) {
         const val KEY_PINNED_PEERS = "pinned_peers_json"
         const val KEY_REFUSE_CLEARTEXT = "refuse_cleartext"
         const val KEY_HIDE_FROM_DISCOVERY = "hide_from_discovery"
+        const val KEY_MANUAL_PEERS = "manual_peers"
 
         // Mirrors the Wails default; conservative against Windows-only nasties.
         const val DEFAULT_BLOCKED_EXT = "exe,bat,cmd,com,scr,msi,ps1,vbs,jse,lnk"
@@ -153,6 +157,14 @@ data class Settings(
      * passive sniffers. Off by default.
      */
     val hideFromDiscovery: Boolean = false,
+    /**
+     * Cross-subnet / out-of-broadcast peers added by hand. Each entry
+     * is "ip" or "ip:port" — same shape as the Wails-side ManualPeers.
+     * The messenger pokes each entry with a unicast HELLO every
+     * discovery interval, so a peer outside our broadcast domain can
+     * still find us once we know its IP.
+     */
+    val manualPeers: List<String> = emptyList(),
 )
 
 data class PinnedPeer(

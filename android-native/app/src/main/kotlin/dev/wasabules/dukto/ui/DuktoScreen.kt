@@ -125,6 +125,12 @@ fun DuktoScreen(
     onRefuseCleartextChange: (Boolean) -> Unit = {},
     /** Toggles the "hide from discovery" backend flag (Settings sheet). */
     onHideFromDiscoveryChange: (Boolean) -> Unit = {},
+    /** Manual-peer add: returns the canonical form on success, null on
+     *  parse failure. The dialog uses the return to clear the input
+     *  field or show a validation error. */
+    onAddManualPeer: (String) -> String? = { null },
+    /** Manual-peer remove by canonical form. */
+    onRemoveManualPeer: (String) -> Unit = {},
 ) {
     var settingsOpen by remember { mutableStateOf(false) }
     var sendSheetPeer by remember { mutableStateOf<Peer?>(null) }
@@ -267,6 +273,8 @@ fun DuktoScreen(
                 onRefuseCleartextChange = onRefuseCleartextChange,
                 onHideFromDiscoveryChange = onHideFromDiscoveryChange,
                 onUnpinPeer = onUnpinPeer ?: {},
+                onAddManualPeer = onAddManualPeer,
+                onRemoveManualPeer = onRemoveManualPeer,
                 onDismiss = { settingsOpen = false },
             )
         }

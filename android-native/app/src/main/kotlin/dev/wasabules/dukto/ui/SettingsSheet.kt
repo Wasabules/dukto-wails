@@ -77,6 +77,8 @@ fun SettingsSheet(
     onRefuseCleartextChange: (Boolean) -> Unit,
     onHideFromDiscoveryChange: (Boolean) -> Unit,
     onUnpinPeer: (String) -> Unit,
+    onAddManualPeer: (String) -> String?,
+    onRemoveManualPeer: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -252,6 +254,37 @@ fun SettingsSheet(
                     checked = settings.hideFromDiscovery,
                     onCheckedChange = onHideFromDiscoveryChange,
                 )
+
+                Spacer(Modifier.height(12.dp))
+                Text("Manual peers", style = MaterialTheme.typography.titleSmall)
+                Hint(
+                    "Cross-subnet or out-of-broadcast peers — type an IP " +
+                        "(or IP:port). Dukto will poke each entry every 10 s so they learn about you.",
+                )
+                ManualPeerInput(
+                    onAdd = { input ->
+                        val canonical = onAddManualPeer(input)
+                        canonical != null
+                    },
+                )
+                if (settings.manualPeers.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    settings.manualPeers.forEach { entry ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(vertical = 2.dp),
+                        ) {
+                            Text(
+                                entry,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            TextButton(onClick = { onRemoveManualPeer(entry) }) { Text("Remove") }
+                        }
+                    }
+                }
 
                 // — Encrypted overlay (v2)
                 Spacer(Modifier.height(8.dp))
@@ -525,5 +558,47 @@ private fun AuditRow(e: AuditLog.Entry) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
+    }
+}
+
+/**
+ * Small text-input + Add button for manual-peer entry. Validates via
+ * the engine's add callback (which returns null on bad format, the
+ * canonical form on success). On success the field clears.
+ */
+@Composable
+private fun ManualPeerInput(onAdd: (String) -> Boolean) {
+    var input by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(
+            value = input,
+            onValueChange = { input = it; error = null },
+            label = { Text("IP or IP:port") },
+            placeholder = { Text("192.168.1.42") },
+            modifier = Modifier.weight(1f),
+            singleLine = true,
+            isError = error != null,
+        )
+        Spacer(Modifier.size(8.dp))
+        Button(
+            onClick = {
+                if (input.isBlank()) return@Button
+                if (onAdd(input)) {
+                    input = ""
+                    error = null
+                } else {
+                    error = "Invalid format"
+                }
+            },
+            enabled = input.isNotBlank(),
+        ) { Text("Add") }
+    }
+    error?.let {
+        Text(
+            it,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
     }
 }
