@@ -2,7 +2,7 @@
 
 This document records the design for adding **end-to-end encryption** on top of the legacy Dukto LAN protocol while keeping full **back-compatibility** with the existing peers (Qt, third-party apps that don't speak v2). The implementation is split across three milestones (M1 → M3); the wire format described in [`PROTOCOL.md`](PROTOCOL.md) is **not** modified — v2 lives in additional, optional layers that older peers ignore.
 
-Status: design frozen. M1 ✅, M2 ✅, M3a ✅ (Noise XX foundation), M3b ✅ (Wails wire-up + manual TOFU). M3c (Android Noise port) and M3d (EFF PSK pairing UI + audit column) still pending.
+Status: design frozen. **M1–M3d shipped.** Encrypted transfers (Noise XX, ChaCha20-Poly1305) work cross-stack between Wails ↔ Android with both manual TOFU pinning and one-shot 5-word EFF passphrase pairing (Noise XXpsk2). Received items are flagged 🔒 in the audit/activity surfaces when the originating session ran encrypted.
 
 ## Threat model
 
