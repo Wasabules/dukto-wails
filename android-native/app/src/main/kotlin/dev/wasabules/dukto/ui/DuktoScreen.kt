@@ -106,10 +106,13 @@ fun DuktoScreen(
     /** Pin/unpin callbacks; null disables the trust button. */
     onPinPeer: ((Peer) -> Unit)? = null,
     onUnpinPeer: ((String) -> Unit)? = null,
-    /** PSK pairing flow callbacks; null disables the 🤝 button. */
+    /** PSK pairing flow callbacks; null disables the 🤝 button. The
+     *  pair-with-passphrase callback is suspend because Socket I/O is
+     *  forbidden on the main thread — the caller dispatches it to
+     *  Dispatchers.IO. */
     onStartPairing: (() -> String)? = null,
     onCancelPairing: (() -> Unit)? = null,
-    onPairWithPassphrase: ((Peer, String) -> Result<Unit>)? = null,
+    onPairWithPassphrase: (suspend (Peer, String) -> Result<Unit>)? = null,
 ) {
     var settingsOpen by remember { mutableStateOf(false) }
     var sendSheetPeer by remember { mutableStateOf<Peer?>(null) }

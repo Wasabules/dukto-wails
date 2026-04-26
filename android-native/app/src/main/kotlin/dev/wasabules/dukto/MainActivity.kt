@@ -195,7 +195,11 @@ class MainActivity : FragmentActivity() {
                         onStartPairing = { engine.startPairing() },
                         onCancelPairing = { engine.cancelPairing() },
                         onPairWithPassphrase = { peer, code ->
-                            runCatching { engine.pairWithPassphrase(peer.address, peer.port, code) }
+                            // Socket.connect + Noise handshake — must not
+                            // run on the main thread (NetworkOnMainThread).
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                runCatching { engine.pairWithPassphrase(peer.address, peer.port, code) }
+                            }
                         },
                     )
                 }
