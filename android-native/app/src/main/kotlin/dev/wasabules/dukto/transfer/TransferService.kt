@@ -38,19 +38,29 @@ class TransferService : Service() {
                 val body = intent.getStringExtra(EXTRA_BODY).orEmpty()
                 val progress = intent.getIntExtra(EXTRA_PROGRESS, -1)
                 val maxProgress = intent.getIntExtra(EXTRA_MAX, 0)
-                val n = buildNotification(title, body, progress, maxProgress)
-                ServiceCompat.startForeground(
-                    this, NOTIF_ID, n,
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0,
-                )
+                promoteForeground(buildNotification(title, body, progress, maxProgress))
             }
             ACTION_STOP -> {
+                // The caller delivered this intent via startForegroundService,
+                // so the system armed a 5-second startForeground deadline. We
+                // MUST call startForeground before stopping or the kernel
+                // kills the process with ForegroundServiceDidNotStartInTime —
+                // even when the matching ACTION_UPDATE was never sent (e.g.
+                // a session rejected by RefuseCleartext before any progress).
+                promoteForeground(buildNotification("Dukto", "Stopping…", 0, 0))
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
         }
         return START_NOT_STICKY
+    }
+
+    private fun promoteForeground(n: Notification) {
+        ServiceCompat.startForeground(
+            this, NOTIF_ID, n,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0,
+        )
     }
 
     private fun buildNotification(title: String, body: String, progress: Int, max: Int): Notification {

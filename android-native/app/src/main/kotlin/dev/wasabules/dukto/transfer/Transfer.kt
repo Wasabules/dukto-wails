@@ -17,9 +17,11 @@ import dev.wasabules.dukto.protocol.readElementHeader
 import dev.wasabules.dukto.protocol.readSessionHeader
 import dev.wasabules.dukto.protocol.writeElementHeader
 import dev.wasabules.dukto.protocol.writeSessionHeader
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -135,7 +137,12 @@ class Server(
      *  new fingerprints when they disagree, null otherwise. */
     private val tofuMismatchProvider: (InetAddress, ByteArray) -> Pair<String, String>? = { _, _ -> null },
 ) {
-    private val scope = CoroutineScope(Dispatchers.IO)
+    // SupervisorJob: a session-level crash (e.g. an IOException escaping
+    // upgradeIfV2 because RefuseCleartext rejected an unpaired peer)
+    // must not cancel the parent scope and tear the listen-loop down.
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob() + CoroutineExceptionHandler { _, t ->
+        Log.w(TAG, "uncaught in Server scope: ${t.message}", t)
+    })
     private val _events = MutableSharedFlow<TransferEvent>(extraBufferCapacity = 64)
     val events: SharedFlow<TransferEvent> = _events.asSharedFlow()
 
@@ -232,9 +239,19 @@ class Server(
                 }
                 receiveFiles(input, from, header, firstElement = null)
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "session from $from failed: ${e.message}")
-            _events.emit(TransferEvent.Failed(from, e.message ?: e.javaClass.simpleName, isReceive = true))
+        } catch (t: Throwable) {
+            // Catch Throwable (not just Exception) so Errors and stray
+            // CancellationException-wrapped IOExceptions can't bubble out
+            // and tear the parent scope down. tryEmit instead of emit so
+            // a closed-channel race here can't itself throw.
+            Log.w(TAG, "session from $from failed: ${t.message}", t)
+            _events.tryEmit(
+                TransferEvent.Failed(from, t.message ?: t.javaClass.simpleName, isReceive = true),
+            )
+            // Make sure the underlying socket is closed even if `client.use`
+            // didn't get a chance to (e.g. an exception thrown before we
+            // entered the use-block).
+            runCatching { client.close() }
         } finally {
             activeReceive.compareAndSet(client, null)
         }
@@ -541,7 +558,9 @@ class Sender(
     private val refuseCleartextProvider: () -> Boolean = { false },
 ) {
 
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob() + CoroutineExceptionHandler { _, t ->
+        Log.w(TAG, "uncaught in Sender scope: ${t.message}", t)
+    })
     private val _events = MutableSharedFlow<TransferEvent>(extraBufferCapacity = 64)
     val events: SharedFlow<TransferEvent> = _events.asSharedFlow()
 
@@ -679,9 +698,9 @@ class Sender(
                 val total = body(out)
                 _events.tryEmit(TransferEvent.Sent(to, total))
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "send to ${to.address} failed: ${e.message}")
-            _events.tryEmit(TransferEvent.Failed(to.address, e.message ?: e.javaClass.simpleName, isReceive))
+        } catch (t: Throwable) {
+            Log.w(TAG, "send to ${to.address} failed: ${t.message}", t)
+            _events.tryEmit(TransferEvent.Failed(to.address, t.message ?: t.javaClass.simpleName, isReceive))
         } finally {
             activeSend.compareAndSet(sock, null)
         }
