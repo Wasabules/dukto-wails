@@ -114,6 +114,7 @@ class DuktoEngine(private val app: Context) {
         context = app,
         signatureProvider = { currentSignature(app, settings.state.value.buddyName) },
         identity = identity,
+        hideFromDiscovery = { settings.state.value.hideFromDiscovery },
     )
     val peers = messenger.peers
 
@@ -249,6 +250,9 @@ class DuktoEngine(private val app: Context) {
 
     fun setRefuseCleartext(enabled: Boolean) =
         settings.update { it.copy(refuseCleartext = enabled) }
+
+    fun setHideFromDiscovery(enabled: Boolean) =
+        settings.update { it.copy(hideFromDiscovery = enabled) }
 
     /**
      * Pin the v2 peer at [addr] using its currently advertised Ed25519

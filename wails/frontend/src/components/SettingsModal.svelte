@@ -29,6 +29,7 @@
   export let blockList: string[] = [];
   export let confirmUnknown = false;
   export let refuseCleartext = false;
+  export let hideFromDiscovery = false;
   export let pinned: import('../lib/dukto').PinnedPeer[] = [];
 
   // Limits
@@ -79,6 +80,7 @@
   export let onToggleConfirmUnknown: (on: boolean) => void = () => {};
   export let onForgetApprovals: () => void = () => {};
   export let onToggleRefuseCleartext: (on: boolean) => void = () => {};
+  export let onToggleHideFromDiscovery: (on: boolean) => void = () => {};
   export let onUnpinPeer: (fingerprint: string) => void = () => {};
 
   // Limits callbacks
@@ -204,8 +206,10 @@
           {onToggleConfirmUnknown}
           {onForgetApprovals}
           {refuseCleartext}
+          {hideFromDiscovery}
           {pinned}
           {onToggleRefuseCleartext}
+          {onToggleHideFromDiscovery}
           {onUnpinPeer}
         />
       {:else if tab === 'limits'}

@@ -32,6 +32,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.foundation.border
@@ -122,6 +123,8 @@ fun DuktoScreen(
     onPairWithPassphrase: (suspend (Peer, String) -> Result<Unit>)? = null,
     /** Toggles the "refuse cleartext" backend flag (Settings sheet). */
     onRefuseCleartextChange: (Boolean) -> Unit = {},
+    /** Toggles the "hide from discovery" backend flag (Settings sheet). */
+    onHideFromDiscoveryChange: (Boolean) -> Unit = {},
 ) {
     var settingsOpen by remember { mutableStateOf(false) }
     var sendSheetPeer by remember { mutableStateOf<Peer?>(null) }
@@ -262,14 +265,18 @@ fun DuktoScreen(
                 onBiometricLockChange = onBiometricLockChange,
                 fingerprint = fingerprint,
                 onRefuseCleartextChange = onRefuseCleartextChange,
+                onHideFromDiscoveryChange = onHideFromDiscoveryChange,
                 onUnpinPeer = onUnpinPeer ?: {},
                 onDismiss = { settingsOpen = false },
             )
         }
 
         sendSheetPeer?.let { peer ->
+            val peerPaired = peer.fingerprint.isNotEmpty() &&
+                peer.fingerprint in pinnedFingerprints
             SendSheet(
                 peer = peer,
+                paired = peerPaired,
                 hasPendingShare = pendingShare.isNotEmpty(),
                 onSendText = { text -> onSendText(peer, text); sendSheetPeer = null },
                 onSendFiles = { onSendFiles(peer); sendSheetPeer = null },
@@ -760,6 +767,7 @@ private fun EmptyHint(text: String) {
 @Composable
 private fun SendSheet(
     peer: Peer,
+    paired: Boolean = false,
     hasPendingShare: Boolean,
     onSendText: (String) -> Unit,
     onSendFiles: () -> Unit,
@@ -771,6 +779,10 @@ private fun SendSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             Text("Send to ${peer.signature}", style = MaterialTheme.typography.titleMedium)
+            if (!paired) {
+                Spacer(Modifier.height(8.dp))
+                CleartextWarning(v2Capable = peer.v2Capable)
+            }
             Spacer(Modifier.height(16.dp))
             OutlinedTextField(
                 value = text,
@@ -792,6 +804,45 @@ private fun SendSheet(
                 OutlinedButton(onClick = onSendFolder) { Text("Pick folder") }
             }
             Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+/**
+ * Inline warning displayed inside the send sheet when the destination
+ * peer isn't paired. The two flavours read differently:
+ *   - v2Capable: a paired-eligible peer that the user just hasn't
+ *     paired with yet — actionable, point at the peer-card menu.
+ *   - !v2Capable: a v1 peer that can't do encryption at all — frame
+ *     it as an unavoidable cleartext send.
+ */
+@Composable
+private fun CleartextWarning(v2Capable: Boolean) {
+    val container = androidx.compose.ui.graphics.Color(0xFFFFE9B3)
+    val onContainer = androidx.compose.ui.graphics.Color(0xFF5C3B00)
+    Surface(
+        color = container,
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Text(
+                "⚠️  Cleartext",
+                style = MaterialTheme.typography.titleSmall,
+                color = onContainer,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                if (v2Capable) {
+                    "This peer supports encryption but isn't paired yet. " +
+                        "Pair via the ⋮ menu on the peer card to encrypt future sends."
+                } else {
+                    "This peer doesn't run a v2 Dukto — bytes go on the wire " +
+                        "in clear. Anyone on the same LAN can read them."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = onContainer,
+            )
         }
     }
 }

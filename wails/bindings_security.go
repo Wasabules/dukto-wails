@@ -120,6 +120,30 @@ func (a *App) SetRefuseCleartext(on bool) error {
 	return a.settings.Update(func(v *settings.Values) { v.RefuseCleartext = on })
 }
 
+// HideFromDiscovery returns whether the discovery layer is in "stealth"
+// mode (no outbound HELLO).
+func (a *App) HideFromDiscovery() bool {
+	return a.settings.Values().HideFromDiscovery
+}
+
+// SetHideFromDiscovery toggles UDP HELLO suppression. When on:
+//   - we stop broadcasting our presence,
+//   - we stop replying to inbound HELLO probes,
+//   - we don't send GOODBYE on shutdown.
+//
+// We still listen on the UDP socket, so we keep seeing other peers and
+// can dial them as usual; the toggle just makes Dukto invisible to
+// passive sniffers and to peers who don't already know our IP.
+func (a *App) SetHideFromDiscovery(on bool) error {
+	if err := a.settings.Update(func(v *settings.Values) { v.HideFromDiscovery = on }); err != nil {
+		return err
+	}
+	if a.messenger != nil {
+		a.messenger.SetHideFromDiscovery(on)
+	}
+	return nil
+}
+
 // ForgetApprovedPeers drops every cached approval so the next session from
 // each peer re-prompts.
 func (a *App) ForgetApprovedPeers() error {

@@ -188,6 +188,10 @@ class Server(
     private suspend fun handleSession(client: Socket) = withContext(Dispatchers.IO) {
         val from = client.inetAddress
         activeReceive.compareAndSet(null, client)
+        // Reset the encrypted flag at session start: if the session is
+        // rejected before upgradeIfV2 sets the real value, the resulting
+        // Failed entry must not inherit the previous session's flag.
+        onSessionMode(false)
         try {
             // Pre-session gate: master switch + block list + confirm-unknown.
             policy?.let { p ->

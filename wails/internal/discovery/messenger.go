@@ -85,6 +85,10 @@ type Messenger struct {
 	lastHello map[netip.Addr]time.Time
 	cooldown  time.Duration
 
+	// hidden flips outbound HELLO emission off without restarting the
+	// messenger. Mutate via SetHideFromDiscovery.
+	hidden bool
+
 	events chan Event
 	stop   chan struct{}
 	wg     sync.WaitGroup
@@ -117,6 +121,11 @@ type Config struct {
 	// verifies. Leaving them unset confines the messenger to legacy mode.
 	IdentityPub  ed25519.PublicKey
 	IdentityPriv ed25519.PrivateKey
+
+	// HideFromDiscovery, when true, suppresses every outbound HELLO
+	// (broadcast + unicast reply + GOODBYE). Reads via SetHideFromDiscovery
+	// at runtime — toggling it doesn't restart the messenger.
+	HideFromDiscovery bool
 }
 
 // New builds a Messenger. It does not open any socket; call Start.
@@ -147,9 +156,25 @@ func New(cfg Config) *Messenger {
 		v2Peers:   map[netip.Addr][]byte{},
 		lastHello: map[netip.Addr]time.Time{},
 		cooldown:  cfg.HelloCooldown,
+		hidden:    cfg.HideFromDiscovery,
 		events:    make(chan Event, 16),
 		stop:      make(chan struct{}),
 	}
+}
+
+// SetHideFromDiscovery toggles outbound HELLO suppression at runtime.
+// True = invisible to passive sniffers and to peers who don't know our
+// IP already. False (default) = broadcast normally.
+func (m *Messenger) SetHideFromDiscovery(on bool) {
+	m.mu.Lock()
+	m.hidden = on
+	m.mu.Unlock()
+}
+
+func (m *Messenger) isHidden() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.hidden
 }
 
 // hasIdentity reports whether the messenger was constructed with a v2 keypair.
@@ -223,7 +248,13 @@ func (m *Messenger) Peers() []Peer {
 // every known port (default port + every port observed from PORT peers).
 // When the messenger holds a v2 identity, a 0x06 broadcast is sent in
 // addition to the legacy 0x04 datagram so v1-only peers keep working.
+//
+// Returns nil immediately when HideFromDiscovery is on — we never
+// announce ourselves on the LAN in that mode.
 func (m *Messenger) SayHello() error {
+	if m.isHidden() {
+		return nil
+	}
 	msg := protocol.BuddyMessage{
 		Type:      protocol.HelloBroadcastType(m.port),
 		Port:      m.port,
@@ -248,8 +279,12 @@ func (m *Messenger) SayHello() error {
 	return nil
 }
 
-// SayGoodbye broadcasts a GOODBYE. Called implicitly by Stop.
+// SayGoodbye broadcasts a GOODBYE. Called implicitly by Stop. Suppressed
+// when HideFromDiscovery is on.
 func (m *Messenger) SayGoodbye() error {
+	if m.isHidden() {
+		return nil
+	}
 	return m.broadcast(protocol.Goodbye())
 }
 
@@ -475,8 +510,11 @@ func (m *Messenger) UnicastHello(addr netip.Addr, port uint16) {
 // sendUnicastHello sends a HELLO reply to (addr, port). Picks HELLO_UNICAST
 // or HELLO_PORT_UNICAST based on the local bind port. If the messenger holds
 // a v2 identity, a 0x07 unicast is sent alongside so the peer learns our key.
+//
+// Suppressed when HideFromDiscovery is on — the responder side stays silent
+// so an active probe (broadcast HELLO) doesn't unmask us.
 func (m *Messenger) sendUnicastHello(addr netip.Addr, port uint16) {
-	if m.conn == nil {
+	if m.conn == nil || m.isHidden() {
 		return
 	}
 	msg := protocol.BuddyMessage{
