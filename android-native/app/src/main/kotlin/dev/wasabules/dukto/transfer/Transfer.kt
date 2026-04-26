@@ -97,12 +97,22 @@ fun interface Cancellable {
  * The active receive socket (if any) is exposed via [activeReceive] so the UI
  * can cancel it.
  */
+/**
+ * Optional v2 tunnel hooks. When [v2Identity] is non-null the server peeks
+ * the first 8 bytes of every accepted connection; if they match the v2
+ * magic it runs a Noise XX responder handshake before reading the legacy
+ * SessionHeader off the resulting Session. [onSessionMode] is fired
+ * once per session so the UI can flag the audit/history entry as
+ * encrypted vs cleartext.
+ */
 class Server(
     private val context: Context,
     private val port: Int = DEFAULT_PORT,
     private val destTreeUriProvider: () -> String? = { null },
     private val policy: SessionPolicy? = null,
     private val signatureLookup: (InetAddress) -> String? = { null },
+    private val v2Identity: dev.wasabules.dukto.identity.Identity? = null,
+    private val onSessionMode: (Boolean) -> Unit = {},
 ) {
     private val scope = CoroutineScope(Dispatchers.IO)
     private val _events = MutableSharedFlow<TransferEvent>(extraBufferCapacity = 64)
@@ -162,7 +172,15 @@ class Server(
             }
 
             client.use { sock ->
-                val input = BufferedInputStream(sock.getInputStream())
+                // Magic-prefix peek + optional Noise XX upgrade. When v2
+                // is enabled and the prefix matches we replace the raw
+                // streams with the Session's encrypted streams; otherwise
+                // the peek is replayed and the legacy parser sees an
+                // unmodified byte stream. The receiver doesn't write
+                // back during a session, so we drop v2.output.
+                val v2 = upgradeIfV2(sock)
+                val input = BufferedInputStream(v2.input)
+                onSessionMode(v2.encrypted)
                 val header = readSessionHeader(input)
                 // Stage 4: session size cap.
                 policy?.checkSessionSize(from, header.totalSize)?.let {
@@ -277,10 +295,65 @@ class Server(
         return FileSink(sessionDir)
     }
 
+    /**
+     * Holder for the (input, output, encrypted, remoteStatic) tuple
+     * produced by [upgradeIfV2]. Mirrors the Go side's transfer.Server.Upgrade
+     * return shape.
+     */
+    private data class StreamPair(
+        val input: InputStream,
+        val output: OutputStream,
+        val encrypted: Boolean,
+        val remoteStatic: ByteArray? = null,
+    )
+
+    private fun upgradeIfV2(sock: Socket): StreamPair {
+        val identity = v2Identity
+        if (identity == null) {
+            return StreamPair(sock.getInputStream(), sock.getOutputStream(), encrypted = false)
+        }
+        val peeked = dev.wasabules.dukto.tunnel.peekMagic(sock.getInputStream())
+        if (!peeked.isV2) {
+            return StreamPair(peeked.stream, sock.getOutputStream(), encrypted = false)
+        }
+        val session = dev.wasabules.dukto.tunnel.handshake(
+            peeked.stream, sock.getOutputStream(),
+            dev.wasabules.dukto.tunnel.HandshakeRole.Responder,
+            identity.x25519Private(), identity.x25519Public(),
+            psk = null,
+            closer = {},
+        )
+        // Wrap the Session as InputStream/OutputStream so the rest of
+        // the receive code is unchanged.
+        return StreamPair(SessionInput(session), SessionOutput(session), encrypted = true, remoteStatic = session.remoteStatic)
+    }
+
     private companion object {
         const val TAG = "DuktoServer"
         const val MAX_TEXT_BYTES = 8L * 1024L * 1024L
     }
+}
+
+/** Adapter exposing a [Session]'s read() loop as a java.io.InputStream. */
+private class SessionInput(private val s: dev.wasabules.dukto.tunnel.Session) : InputStream() {
+    private val one = ByteArray(1)
+    override fun read(): Int {
+        val n = s.read(one, 0, 1)
+        return if (n <= 0) -1 else (one[0].toInt() and 0xFF)
+    }
+    override fun read(b: ByteArray, off: Int, len: Int): Int = s.read(b, off, len)
+    override fun close() = s.close()
+}
+
+/** Adapter exposing a [Session]'s write() as a java.io.OutputStream. */
+private class SessionOutput(private val s: dev.wasabules.dukto.tunnel.Session) : OutputStream() {
+    override fun write(b: Int) {
+        s.write(byteArrayOf((b and 0xFF).toByte()))
+    }
+    override fun write(b: ByteArray, off: Int, len: Int) {
+        s.write(b, off, len)
+    }
+    override fun close() = s.close()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -407,7 +480,21 @@ private class DocumentSink(
  * One-shot operations: text snippet, file URIs, and recursive folder send via
  * a SAF tree URI.
  */
-class Sender(private val context: Context) {
+/**
+ * @param v2Identity when set, the sender will attempt the v2 Noise XX
+ *                   handshake on connections to peers that
+ *                   [pinnedX25519For] returns a non-null pubkey for.
+ *                   Cleartext fallback happens implicitly for unpinned
+ *                   peers and v1 receivers.
+ * @param pinnedX25519For look-up: peer InetAddress → expected X25519
+ *                       pubkey (32 bytes) of that peer, or null when no
+ *                       pinning record exists for the address.
+ */
+class Sender(
+    private val context: Context,
+    private val v2Identity: dev.wasabules.dukto.identity.Identity? = null,
+    private val pinnedX25519For: (InetAddress) -> ByteArray? = { null },
+) {
 
     private val scope = CoroutineScope(Dispatchers.IO)
     private val _events = MutableSharedFlow<TransferEvent>(extraBufferCapacity = 64)
@@ -534,7 +621,8 @@ class Sender(private val context: Context) {
         activeSend.set(sock)
         try {
             sock.use { s ->
-                val out = BufferedOutputStream(s.getOutputStream())
+                val v2 = senderUpgradeIfPinned(s, to.address)
+                val out = BufferedOutputStream(v2)
                 val total = body(out)
                 _events.tryEmit(TransferEvent.Sent(to, total))
             }
@@ -569,7 +657,38 @@ class Sender(private val context: Context) {
         return null
     }
 
+    /**
+     * If the peer at [addr] has a pinned X25519 pubkey, run the Noise XX
+     * initiator on [sock]'s I/O streams, verify the remote_static, and
+     * return an [OutputStream] that writes encrypted frames. Otherwise
+     * return the raw socket output stream (cleartext fallback).
+     */
+    private fun senderUpgradeIfPinned(sock: Socket, addr: InetAddress): OutputStream {
+        val identity = v2Identity ?: return sock.getOutputStream()
+        val expected = pinnedX25519For(addr) ?: return sock.getOutputStream()
+        val session = dev.wasabules.dukto.tunnel.handshake(
+            sock.getInputStream(), sock.getOutputStream(),
+            dev.wasabules.dukto.tunnel.HandshakeRole.Initiator,
+            identity.x25519Private(), identity.x25519Public(),
+            psk = null,
+            closer = {},
+        )
+        if (!session.remoteStatic.contentEquals(expected)) {
+            session.close()
+            throw IllegalStateException("v2 fingerprint mismatch with ${addr.hostAddress}")
+        }
+        return SenderSessionOutput(session)
+    }
+
     private companion object { const val TAG = "DuktoSender" }
+}
+
+/** Adapter exposing a [Session]'s write() as a java.io.OutputStream for
+ *  the Sender side. Mirrors SessionOutput on the Server side. */
+private class SenderSessionOutput(private val s: dev.wasabules.dukto.tunnel.Session) : OutputStream() {
+    override fun write(b: Int) { s.write(byteArrayOf((b and 0xFF).toByte())) }
+    override fun write(b: ByteArray, off: Int, len: Int) { s.write(b, off, len) }
+    override fun close() = s.close()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

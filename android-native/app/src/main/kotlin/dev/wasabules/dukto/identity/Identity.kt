@@ -9,6 +9,7 @@ import net.i2p.crypto.eddsa.EdDSAPublicKey
 import net.i2p.crypto.eddsa.spec.EdDSANamedCurveTable
 import net.i2p.crypto.eddsa.spec.EdDSAPrivateKeySpec
 import net.i2p.crypto.eddsa.spec.EdDSAPublicKeySpec
+import org.bouncycastle.math.ec.rfc7748.X25519
 import java.io.File
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -33,6 +34,9 @@ data class Identity(
     /** Underlying EdDSA private key handle — used by future sign() calls.
      *  Treat as opaque — never log, never serialise. */
     internal val privateKey: EdDSAPrivateKey,
+    /** Original 32-byte seed. Persisted on disk; kept in-memory for
+     *  deriving the matching X25519 keypair via SHA-512(seed)[:32]. */
+    internal val seed: ByteArray,
 ) {
     /** Canonical 16-character fingerprint (XXXX-XXXX-XXXX-XXXX). */
     val fingerprint: String get() = fingerprintOf(publicKey)
@@ -45,11 +49,75 @@ data class Identity(
         return engine.sign()
     }
 
+    /**
+     * X25519 private scalar derived from this install's Ed25519 seed via
+     * SHA-512 — matches RFC 8032's signing-scalar derivation. Pairs with
+     * [Ed25519PubToX25519Pub] applied to [publicKey].
+     */
+    fun x25519Private(): ByteArray {
+        val h = MessageDigest.getInstance("SHA-512").digest(seed).copyOf(32)
+        h[0] = (h[0].toInt() and 248).toByte()
+        h[31] = ((h[31].toInt() and 127) or 64).toByte()
+        return h
+    }
+
+    /** X25519 public key matching [x25519Private]. */
+    fun x25519Public(): ByteArray {
+        val pub = ByteArray(32)
+        X25519.scalarMultBase(x25519Private(), 0, pub, 0)
+        return pub
+    }
+
     // Override equals/hashCode because the auto-generated ones for data
     // classes don't compare ByteArray contents structurally.
     override fun equals(other: Any?): Boolean =
         other is Identity && publicKey.contentEquals(other.publicKey)
     override fun hashCode(): Int = publicKey.contentHashCode()
+}
+
+/**
+ * Compute the X25519 (Montgomery) public key equivalent to an Ed25519
+ * (Edwards) public key. Mirrors the Go side's
+ * [identity.Ed25519PubToX25519Pub] so both peers can agree on each
+ * other's Noise static_key from just the Ed25519 fingerprint already
+ * advertised over UDP discovery.
+ *
+ * Returns null on any malformed input rather than throwing — callers
+ * treat the result as a yes/no signal and don't differentiate failure
+ * modes.
+ */
+fun ed25519PubToX25519Pub(edPub: ByteArray): ByteArray? {
+    if (edPub.size != 32) return null
+    // BouncyCastle exposes the Edwards-to-Montgomery projection only via
+    // the internal point representation. Roll the conversion here using
+    // a SHA-256 prologue of the basepoint that BC provides for our use:
+    // y = Ed25519 affine y-coord, u = (1+y)/(1-y) mod p.
+    return runCatching { edwardsYToMontgomeryU(edPub) }.getOrNull()
+}
+
+/**
+ * Edwards-to-Montgomery point conversion, derived directly from the
+ * Curve25519 birational map: u = (1 + y) / (1 - y) mod p where y is the
+ * Edwards y-coordinate (encoded little-endian, top bit is the x-sign
+ * which we discard for the Montgomery side).
+ */
+private fun edwardsYToMontgomeryU(edPub: ByteArray): ByteArray {
+    val p = java.math.BigInteger.valueOf(2).pow(255).subtract(java.math.BigInteger.valueOf(19))
+    // Decode little-endian, mask off the high bit (x-sign).
+    val le = edPub.copyOf()
+    le[31] = (le[31].toInt() and 0x7F).toByte()
+    val y = java.math.BigInteger(1, le.reversedArray())
+    val one = java.math.BigInteger.ONE
+    val num = one.add(y).mod(p)
+    val den = one.subtract(y).mod(p).modInverse(p)
+    val u = num.multiply(den).mod(p)
+    val out = ByteArray(32)
+    val ub = u.toByteArray()
+    // BigInteger.toByteArray is big-endian and may carry a sign byte;
+    // copy into little-endian.
+    val ue = if (ub.size > 32) ub.copyOfRange(ub.size - 32, ub.size) else ub
+    for (i in ue.indices) out[ue.size - 1 - i] = ue[i]
+    return out
 }
 
 /**
@@ -129,7 +197,7 @@ private fun generateAndPersist(file: EncryptedFile, path: File): Identity {
     // regenerate" — same shape as the Go side).
     if (path.exists()) path.delete() // EncryptedFile refuses to write over an existing file
     file.openFileOutput().use { it.write(encodePayload(seed, publicKey)) }
-    return Identity(publicKey, priv)
+    return Identity(publicKey, priv, seed)
 }
 
 /**
@@ -160,7 +228,7 @@ private fun decode(data: ByteArray): Identity {
     val pub = data.copyOfRange(33, 65)
     val spec = EdDSANamedCurveTable.getByName(EdDSANamedCurveTable.ED_25519)
     val privSpec = EdDSAPrivateKeySpec(seed, spec)
-    return Identity(pub, EdDSAPrivateKey(privSpec))
+    return Identity(pub, EdDSAPrivateKey(privSpec), seed)
 }
 
 /**
