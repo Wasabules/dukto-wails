@@ -100,6 +100,15 @@ class Messenger(
      *  reply + GOODBYE). Re-read on each emission so toggling at runtime
      *  takes effect immediately. */
     private val hideFromDiscovery: () -> Boolean = { false },
+    /** Called when a source IP that previously produced a verified
+     *  0x06/0x07 with [oldPub] now produces one with [newPub]. The
+     *  discovery layer doesn't know what's pinned — the engine
+     *  decides whether to surface a UI alert. */
+    private val onIdentityRotation: (
+        addr: InetAddress,
+        oldPub: ByteArray,
+        newPub: ByteArray,
+    ) -> Unit = { _, _, _ -> },
 ) {
     private val scope = CoroutineScope(Dispatchers.IO)
 
@@ -217,7 +226,16 @@ class Messenger(
                 val pub = msg.pubKey ?: return
                 val sig = msg.sig ?: return
                 if (!verifyEd25519(pub, msg.signedPayload(), sig)) return
-                synchronized(v2Keys) { v2Keys[src] = pub.copyOf() }
+                // Identity-rotation detection: when the same IP swaps
+                // its advertised pubkey, fire the rotation hook so the
+                // engine can decide whether to alert (only matters when
+                // the old key was in the TOFU table).
+                val rotated = synchronized(v2Keys) {
+                    val previous = v2Keys[src]
+                    v2Keys[src] = pub.copyOf()
+                    previous?.takeIf { !it.contentEquals(pub) }
+                }
+                if (rotated != null) onIdentityRotation(src, rotated, pub.copyOf())
                 val peer = Peer(
                     src, msg.port, msg.signature,
                     v2Capable = true,

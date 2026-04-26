@@ -486,6 +486,29 @@ func (a *App) checkTOFUMismatch(remote net.Addr, gotX25519 []byte) *TOFUMismatch
 	}
 }
 
+// onPeerIdentityRotation is the discovery-layer hook called when an IP
+// that previously announced ed_pub_old in 0x06/0x07 now announces
+// ed_pub_new. Fires the existing tofu_mismatch UI event when (and only
+// when) the OLD fingerprint was in our pinned table — otherwise the
+// rotation is just a normal "this peer reinstalled" or a brand-new
+// peer at a recycled IP, and warning would be noise.
+func (a *App) onPeerIdentityRotation(addr netip.Addr, oldPub, newPub []byte) {
+	oldFP := identity.Fingerprint(ed25519.PublicKey(oldPub))
+	newFP := identity.Fingerprint(ed25519.PublicKey(newPub))
+	pinned := a.settings.Values().PinnedPeers
+	rec, ok := pinned[oldFP]
+	if !ok {
+		return // not previously pinned → silent
+	}
+	mismatch := TOFUMismatch{
+		Address:        addr.String(),
+		OldFingerprint: oldFP,
+		NewFingerprint: newFP,
+		Label:          rec.Label,
+	}
+	a.emitTOFUMismatch(mismatch)
+}
+
 // emitTOFUMismatch ships the mismatch payload to the frontend so the UI
 // can pop a "Identity changed" modal. Also writes to the audit log so
 // the event is preserved across UI restarts.
