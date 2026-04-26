@@ -187,6 +187,36 @@ class DuktoEngine(private val app: Context) {
             merge(server.events, sender.events).collect(::onTransferEvent)
         }
         messenger.sayHello()
+        // Manual peers are out of broadcast range, so we poke them with
+        // a unicast HELLO on the same cadence as the broadcast loop.
+        scope.launch { manualPeerPokeLoop() }
+    }
+
+    private suspend fun manualPeerPokeLoop() {
+        while (true) {
+            pokeManualPeers()
+            kotlinx.coroutines.delay(10_000L)
+        }
+    }
+
+    private fun pokeManualPeers() {
+        for (raw in settings.state.value.manualPeers) {
+            val (host, port) = parseManualPeerString(raw) ?: continue
+            val addr = runCatching { java.net.InetAddress.getByName(host) }.getOrNull() ?: continue
+            messenger.unicastHello(addr, port)
+        }
+    }
+
+    private fun parseManualPeerString(s: String): Pair<String, Int>? {
+        val trimmed = s.trim()
+        if (trimmed.isEmpty()) return null
+        val colon = trimmed.lastIndexOf(':')
+        return if (colon >= 0) {
+            val portPart = trimmed.substring(colon + 1).toIntOrNull() ?: return null
+            trimmed.substring(0, colon) to portPart
+        } else {
+            trimmed to dev.wasabules.dukto.protocol.DEFAULT_PORT
+        }
     }
 
     fun stop() {
@@ -254,6 +284,35 @@ class DuktoEngine(private val app: Context) {
 
     fun setHideFromDiscovery(enabled: Boolean) =
         settings.update { it.copy(hideFromDiscovery = enabled) }
+
+    /**
+     * Add a peer by IP[:port] outside the broadcast subnet. Validates
+     * the format, deduplicates, persists, then immediately pokes the
+     * new peer so it learns about us without waiting for the next tick.
+     * Returns the canonical form on success or null if the input was
+     * unparseable.
+     */
+    fun addManualPeer(addr: String): String? {
+        val parsed = parseManualPeerString(addr) ?: return null
+        val canonical = if (parsed.second == dev.wasabules.dukto.protocol.DEFAULT_PORT)
+            parsed.first
+        else
+            "${parsed.first}:${parsed.second}"
+        settings.update { st ->
+            if (canonical in st.manualPeers) st
+            else st.copy(manualPeers = st.manualPeers + canonical)
+        }
+        // Immediate poke so the new peer doesn't wait the full 10 s.
+        runCatching { java.net.InetAddress.getByName(parsed.first) }.getOrNull()?.let {
+            messenger.unicastHello(it, parsed.second)
+        }
+        return canonical
+    }
+
+    /** Drop a manual peer entry by its canonical form. */
+    fun removeManualPeer(canonical: String) {
+        settings.update { st -> st.copy(manualPeers = st.manualPeers - canonical) }
+    }
 
     /**
      * Pin the v2 peer at [addr] using its currently advertised Ed25519

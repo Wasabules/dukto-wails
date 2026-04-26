@@ -212,6 +212,8 @@ class MainActivity : FragmentActivity() {
                         },
                         onRefuseCleartextChange = engine::setRefuseCleartext,
                         onHideFromDiscoveryChange = engine::setHideFromDiscovery,
+                        onAddManualPeer = engine::addManualPeer,
+                        onRemoveManualPeer = engine::removeManualPeer,
                     )
                 }
 

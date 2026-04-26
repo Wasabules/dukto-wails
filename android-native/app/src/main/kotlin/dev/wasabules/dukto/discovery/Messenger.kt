@@ -164,6 +164,18 @@ class Messenger(
         scope.launch { socket?.let { broadcastHello(it) } }
     }
 
+    /**
+     * Send a unicast HELLO to a single peer. Used to poke manual peers
+     * (cross-subnet / out-of-broadcast) so they learn we exist even when
+     * UDP broadcast can't reach. Suppressed when HideFromDiscovery is on,
+     * for the same reason as the regular reply path.
+     */
+    fun unicastHello(dst: InetAddress, dstPort: Int = DEFAULT_PORT) {
+        scope.launch {
+            socket?.let { s -> runCatching { sendHelloUnicast(s, dst, dstPort) } }
+        }
+    }
+
     // ── network plumbing ─────────────────────────────────────────────────────
 
     private suspend fun receiveLoop(s: DatagramSocket) = withContext(Dispatchers.IO) {
