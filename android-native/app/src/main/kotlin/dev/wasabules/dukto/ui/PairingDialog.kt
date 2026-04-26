@@ -17,6 +17,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,10 +28,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.core.content.ContextCompat
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.launch
 
 /**
@@ -58,7 +64,42 @@ fun PairingDialog(
     var code by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var pendingScan by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    // ZXing scan launcher — fires when the user taps "Scan QR" inside the
+    // "enter code" path. Result is the raw passphrase the other peer's
+    // dialog encoded in the QR; we drop it straight into the text field
+    // so the user can review before submitting.
+    val scanner = rememberLauncherForActivityResult(ScanContract()) { result ->
+        val content = result?.contents
+        if (!content.isNullOrBlank()) {
+            code = content.trim()
+        }
+    }
+    val cameraPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted && pendingScan) {
+            pendingScan = false
+            scanner.launch(scanOptions())
+        } else {
+            pendingScan = false
+            error = if (!granted) "Camera permission refused" else null
+        }
+    }
+    fun startScan() {
+        if (ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.CAMERA,
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            scanner.launch(scanOptions())
+        } else {
+            pendingScan = true
+            cameraPermission.launch(android.Manifest.permission.CAMERA)
+        }
+    }
 
     Dialog(onDismissRequest = onCancel) {
         Column(
@@ -118,7 +159,7 @@ fun PairingDialog(
                 }
                 "enter" -> {
                     Text(
-                        "Type the 5-word code the other peer generated:",
+                        "Type the 5-word code, or scan the QR the other peer is showing.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Spacer(Modifier.height(6.dp))
@@ -129,6 +170,10 @@ fun PairingDialog(
                         placeholder = { Text("apple-tiger-river-ocean-music") },
                         singleLine = true,
                     )
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedButton(onClick = { startScan() }) {
+                        Text("Scan QR")
+                    }
                     error?.let {
                         Spacer(Modifier.height(6.dp))
                         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
@@ -168,4 +213,21 @@ fun PairingDialog(
             }
         }
     }
+}
+
+/**
+ * ZXing scanner options tailored for the Dukto pairing flow:
+ *  - QR-code only (no other barcode formats compete on the live feed).
+ *  - Beep off — this is a privacy/identity ceremony, not a checkout.
+ *  - Locked to portrait via [PortraitCaptureActivity] so the camera
+ *    matches the rest of the app (the stock CaptureActivity is
+ *    landscape-only).
+ *  - Custom prompt makes it obvious what we're scanning.
+ */
+private fun scanOptions(): ScanOptions = ScanOptions().apply {
+    setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+    setBeepEnabled(false)
+    setOrientationLocked(true)
+    setCaptureActivity(PortraitCaptureActivity::class.java)
+    setPrompt("Scan the pairing code")
 }

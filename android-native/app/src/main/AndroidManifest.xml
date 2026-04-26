@@ -16,6 +16,12 @@
     <!-- Notifications: runtime permission on Android 13+. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Camera: used by the pair dialog to scan the QR-encoded passphrase
+         emitted by another peer. Requested on demand only when the user
+         taps "Scan QR" in the pair flow. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
     <application
         android:name=".DuktoApp"
         android:label="@string/app_name"
@@ -54,5 +60,19 @@
             android:name=".transfer.TransferService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- Portrait-locked override of zxing-android-embedded's
+             CaptureActivity. The library's stock entry is landscape;
+             we route the scanner through this subclass via
+             ScanOptions.setCaptureActivity so the camera flow matches
+             the rest of the app. tools:replace overrides the library's
+             screenOrientation entry on the same activity name. -->
+        <activity
+            android:name=".ui.PortraitCaptureActivity"
+            android:screenOrientation="portrait"
+            android:stateNotNeeded="true"
+            android:theme="@style/Theme.AppCompat.NoActionBar"
+            android:windowSoftInputMode="stateAlwaysHidden"
+            android:exported="false" />
     </application>
 </manifest>
