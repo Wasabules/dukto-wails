@@ -100,6 +100,12 @@ fun DuktoScreen(
     onSendFolder: (Peer) -> Unit,
     onCancelInflight: () -> Unit,
     onOpenActivity: (ActivityEntry) -> Unit,
+    /** Map fingerprint → true when the peer is in the local TOFU table.
+     *  Empty when v2 is disabled. */
+    pinnedFingerprints: Set<String> = emptySet(),
+    /** Pin/unpin callbacks; null disables the trust button. */
+    onPinPeer: ((Peer) -> Unit)? = null,
+    onUnpinPeer: ((String) -> Unit)? = null,
 ) {
     var settingsOpen by remember { mutableStateOf(false) }
     var sendSheetPeer by remember { mutableStateOf<Peer?>(null) }
@@ -161,7 +167,19 @@ fun DuktoScreen(
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(peers, key = { it.key }) { peer ->
-                        PeerRow(peer, onClick = { sendSheetPeer = peer })
+                        val paired = peer.fingerprint.isNotEmpty() &&
+                            peer.fingerprint in pinnedFingerprints
+                        PeerRow(
+                            peer = peer,
+                            paired = paired,
+                            onClick = { sendSheetPeer = peer },
+                            onTogglePair = if (peer.v2Capable && peer.fingerprint.isNotEmpty()) {
+                                {
+                                    if (paired) onUnpinPeer?.invoke(peer.fingerprint)
+                                    else onPinPeer?.invoke(peer)
+                                }
+                            } else null,
+                        )
                     }
                 }
             }
@@ -237,7 +255,12 @@ fun DuktoScreen(
 // ── pieces ───────────────────────────────────────────────────────────────────
 
 @Composable
-private fun PeerRow(peer: Peer, onClick: () -> Unit) {
+private fun PeerRow(
+    peer: Peer,
+    paired: Boolean = false,
+    onClick: () -> Unit,
+    onTogglePair: (() -> Unit)? = null,
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -261,7 +284,7 @@ private fun PeerRow(peer: Peer, onClick: () -> Unit) {
                     if (peer.v2Capable) {
                         Spacer(Modifier.size(6.dp))
                         Text(
-                            "🔓",
+                            if (paired) "🔒" else "🔓",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -277,6 +300,11 @@ private fun PeerRow(peer: Peer, onClick: () -> Unit) {
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+            }
+            if (onTogglePair != null) {
+                IconButton(onClick = onTogglePair) {
+                    Text(if (paired) "🔓" else "🔑", style = MaterialTheme.typography.bodyLarge)
                 }
             }
         }

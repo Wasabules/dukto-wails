@@ -39,6 +39,7 @@ class SettingsStore(context: Context) {
             putInt(KEY_MAX_ACTIVITY, next.maxActivityEntries)
             putString(KEY_THEME_MODE, next.themeMode.name)
             putBoolean(KEY_BIOMETRIC_LOCK, next.biometricLockEnabled)
+            putString(KEY_PINNED_PEERS, encodePinned(next.pinnedPeers))
         }
         _state.value = next
     }
@@ -67,6 +68,7 @@ class SettingsStore(context: Context) {
             ThemeMode.valueOf(prefs.getString(KEY_THEME_MODE, ThemeMode.System.name).orEmpty())
         }.getOrDefault(ThemeMode.System),
         biometricLockEnabled = prefs.getBoolean(KEY_BIOMETRIC_LOCK, false),
+        pinnedPeers = decodePinned(prefs.getString(KEY_PINNED_PEERS, null)),
     )
 
     private companion object {
@@ -82,6 +84,7 @@ class SettingsStore(context: Context) {
         const val KEY_THEME_MODE = "theme_mode"
         const val KEY_BIOMETRIC_LOCK = "biometric_lock_enabled"
         const val KEY_ACTIVITY_JSON = "activity_json"
+        const val KEY_PINNED_PEERS = "pinned_peers_json"
 
         // Mirrors the Wails default; conservative against Windows-only nasties.
         const val DEFAULT_BLOCKED_EXT = "exe,bat,cmd,com,scr,msi,ps1,vbs,jse,lnk"
@@ -124,6 +127,52 @@ data class Settings(
      * the app comes to the foreground. Off by default — opt-in.
      */
     val biometricLockEnabled: Boolean = false,
+    /**
+     * TOFU table for the v2 encrypted overlay — keyed by Ed25519
+     * fingerprint, value carries hex-encoded pubkey + label + pinning
+     * timestamp. Mirrors the Wails settings.PinnedPeers map shape.
+     */
+    val pinnedPeers: Map<String, PinnedPeer> = emptyMap(),
+)
+
+data class PinnedPeer(
+    val fingerprint: String,
+    val ed25519PubHex: String,
+    val label: String,
+    val pinnedAt: Long,
 )
 
 enum class ThemeMode { System, Light, Dark }
+
+// ─────────────────────────────────────────────────────────────────────────
+// PinnedPeer (de)serialisation. We avoid pulling in a JSON library here:
+// the storage shape is internal, the values are constrained, and the
+// custom encoding with `\n` / `\t` is cheap to read in a debugger.
+// ─────────────────────────────────────────────────────────────────────────
+
+private const val FIELD_SEP = "\t"
+private const val RECORD_SEP = "\n"
+
+internal fun encodePinned(map: Map<String, PinnedPeer>): String =
+    map.values.joinToString(RECORD_SEP) { p ->
+        listOf(p.fingerprint, p.ed25519PubHex, p.label, p.pinnedAt.toString())
+            .joinToString(FIELD_SEP) { it.replace(FIELD_SEP, " ").replace(RECORD_SEP, " ") }
+    }
+
+internal fun decodePinned(s: String?): Map<String, PinnedPeer> {
+    if (s.isNullOrEmpty()) return emptyMap()
+    val out = mutableMapOf<String, PinnedPeer>()
+    for (line in s.split(RECORD_SEP)) {
+        if (line.isBlank()) continue
+        val parts = line.split(FIELD_SEP)
+        if (parts.size < 4) continue
+        val fp = parts[0]
+        out[fp] = PinnedPeer(
+            fingerprint = fp,
+            ed25519PubHex = parts[1],
+            label = parts[2],
+            pinnedAt = parts[3].toLongOrNull() ?: 0L,
+        )
+    }
+    return out
+}

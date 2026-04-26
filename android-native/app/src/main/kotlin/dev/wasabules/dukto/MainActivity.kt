@@ -184,6 +184,14 @@ class MainActivity : FragmentActivity() {
                         },
                         onCancelInflight = { engine.cancelInflight() },
                         onOpenActivity = { entry -> preview = entry },
+                        pinnedFingerprints = settingsState.pinnedPeers.keys,
+                        onPinPeer = { peer ->
+                            val fp = engine.pinPeer(peer.address)
+                            if (fp == null) {
+                                android.widget.Toast.makeText(this, "Pair: peer hasn't broadcast its key yet", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        onUnpinPeer = { fp -> engine.unpinPeer(fp) },
                     )
                 }
             }

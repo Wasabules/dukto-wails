@@ -1,5 +1,12 @@
 package dev.wasabules.dukto.identity
 
+import net.i2p.crypto.eddsa.EdDSAPrivateKey
+import net.i2p.crypto.eddsa.EdDSAPublicKey
+import net.i2p.crypto.eddsa.spec.EdDSANamedCurveTable
+import net.i2p.crypto.eddsa.spec.EdDSAPrivateKeySpec
+import net.i2p.crypto.eddsa.spec.EdDSAPublicKeySpec
+import org.bouncycastle.math.ec.rfc7748.X25519
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -19,6 +26,28 @@ class IdentityTest {
         assertEquals('-', a[9])
         assertEquals('-', a[14])
         assertTrue("base32 alphabet only", a.replace("-", "").all { it in 'A'..'Z' || it in '2'..'7' })
+    }
+
+    /**
+     * Mirrors the Go-side TestX25519DerivationMatchesEd25519PubConversion:
+     * the X25519 public key derived directly from the seed must equal the
+     * Edwards-to-Montgomery projection of the Ed25519 public key. Without
+     * this invariant, peers that pin a Ed25519 fingerprint (UDP 0x06/0x07)
+     * couldn't validate the Noise XX remote_static.
+     */
+    @Test fun x25519DerivationMatchesEd25519PubConversion() {
+        // Build a deterministic identity in-memory (no Android Context).
+        val seed = ByteArray(32) { (it * 7 + 1).toByte() }
+        val spec = EdDSANamedCurveTable.getByName(EdDSANamedCurveTable.ED_25519)
+        val privSpec = EdDSAPrivateKeySpec(seed, spec)
+        val priv = EdDSAPrivateKey(privSpec)
+        val pub = EdDSAPublicKey(EdDSAPublicKeySpec(privSpec.a, spec)).abyte
+        val id = Identity(pub, priv, seed)
+
+        val fromSeed = id.x25519Public()
+        val fromPub = ed25519PubToX25519Pub(pub)
+            ?: error("ed25519→x25519 conversion failed for a valid pubkey")
+        assertArrayEquals(fromSeed, fromPub)
     }
 
     @Test fun fingerprintMatchesGoSideAlgorithm() {
