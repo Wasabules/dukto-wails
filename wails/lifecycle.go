@@ -36,6 +36,7 @@ func (a *App) startup(ctx context.Context) {
 		IdentityPriv:       a.identity.Private,
 		HideFromDiscovery:  a.settings.Values().HideFromDiscovery,
 		OnIdentityRotation: a.onPeerIdentityRotation,
+		IsPubKeyPinned:     a.isEd25519PubKeyPinned,
 	})
 	if err := a.messenger.Start(ctx); err != nil {
 		log.Printf("dukto: discovery start: %v", err)
@@ -209,6 +210,12 @@ func (a *App) pumpDiscoveryEvents() {
 		view := a.peerViewWith(ev.Peer)
 		switch ev.Kind {
 		case discovery.EventFound:
+			// Refresh LastSeenAddr on every verified v2 sighting of a
+			// pinned peer — gives the unicast probe loop a fresh
+			// target IP without manual config.
+			if ev.Peer.V2Capable && len(ev.Peer.PubKey) > 0 {
+				a.notePinnedPeerSeen(ev.Peer)
+			}
 			runtime.EventsEmit(a.ctx, evtPeerFound, view)
 		case discovery.EventGone:
 			runtime.EventsEmit(a.ctx, evtPeerGone, view)

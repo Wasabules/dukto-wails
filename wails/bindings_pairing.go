@@ -18,6 +18,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"dukto/internal/audit"
+	"dukto/internal/discovery"
 	"dukto/internal/eff"
 	"dukto/internal/identity"
 	"dukto/internal/protocol"
@@ -95,6 +96,60 @@ func (a *App) upgradeServerConn(conn net.Conn) (net.Conn, bool, error) {
 }
 
 // ── pairing flow ─────────────────────────────────────────────────────────
+
+// PinnedAddressTTL is how long a pinned peer's LastSeenAddr stays
+// usable for the unicast poke loop. After this delay without a fresh
+// HELLO sighting, we stop probing the address — protects against
+// leaking our presence to a peer that's now behind a different IP
+// (DHCP renewal of a long-disconnected friend, recycled cafe Wi-Fi,
+// etc.).
+const PinnedAddressTTL = 7 * 24 * time.Hour
+
+// notePinnedPeerSeen refreshes LastSeenAddr on the matching PinnedPeer
+// record. No-op when the peer isn't pinned, when the address is
+// unchanged AND less than 1h old (no need to churn the JSON store on
+// every 10s broadcast), or when a non-paired peer happens to share an
+// IP — the lookup is by fingerprint, computed from the verified
+// pubkey, so impostors can't poison the cache.
+func (a *App) notePinnedPeerSeen(p discovery.Peer) {
+	if len(p.PubKey) != ed25519.PublicKeySize {
+		return
+	}
+	fp := identity.Fingerprint(ed25519.PublicKey(p.PubKey))
+	current := a.settings.Values().PinnedPeers
+	rec, ok := current[fp]
+	if !ok {
+		return
+	}
+	addr := fmt.Sprintf("%s:%d", p.Addr.String(), p.Port)
+	now := time.Now()
+	// Skip the disk write when nothing material changed and the
+	// timestamp is still fresh — saves a JSON rewrite on every tick.
+	if rec.LastSeenAddr == addr && now.Sub(rec.LastSeenAt) < time.Hour {
+		return
+	}
+	_ = a.settings.Update(func(v *settings.Values) {
+		r, ok := v.PinnedPeers[fp]
+		if !ok {
+			return
+		}
+		r.LastSeenAddr = addr
+		r.LastSeenAt = now
+		v.PinnedPeers[fp] = r
+	})
+}
+
+// isEd25519PubKeyPinned answers the messenger's IsPubKeyPinned hook
+// so paired peers' inbound probes get a unicast reply even when our
+// own broadcast is stealthed.
+func (a *App) isEd25519PubKeyPinned(pub ed25519.PublicKey) bool {
+	if len(pub) != ed25519.PublicKeySize {
+		return false
+	}
+	fp := identity.Fingerprint(pub)
+	_, ok := a.settings.Values().PinnedPeers[fp]
+	return ok
+}
 
 // pairingTTL is how long a generated passphrase stays armed on the
 // "responder" side. After expiry the PSK is discarded and the handshake

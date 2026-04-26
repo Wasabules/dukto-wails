@@ -172,6 +172,16 @@ type PinnedPeer struct {
 	Label string `json:"label,omitempty"`
 	// PinnedAt is the wall-clock time of the trust action.
 	PinnedAt time.Time `json:"pinnedAt"`
+	// LastSeenAddr is the most recent IP[:port] we received a verified
+	// 0x06/0x07 from. Used to poke this peer with unicast HELLO when our
+	// own discovery is in stealth — gives paired peers an "I'm alive to
+	// my friends" channel without revealing us to LAN strangers. Updated
+	// on every fresh sighting; cleared via TTL after extended absence.
+	LastSeenAddr string `json:"lastSeenAddr,omitempty"`
+	// LastSeenAt is the wall-clock time of the most recent verified
+	// HELLO from this peer. Drives the LastSeenAddr TTL: once older
+	// than the TTL we stop probing the address (see PinnedAddressTTL).
+	LastSeenAt time.Time `json:"lastSeenAt,omitempty"`
 }
 
 // HistoryItem is one received file or text snippet, persisted so the threaded

@@ -172,6 +172,14 @@ data class PinnedPeer(
     val ed25519PubHex: String,
     val label: String,
     val pinnedAt: Long,
+    /** Most recent IP[:port] we received a verified 0x06/0x07 from.
+     *  Drives the unicast probe loop in stealth mode so paired peers
+     *  stay reachable without broadcasting. */
+    val lastSeenAddr: String = "",
+    /** Wall-clock millis of the most recent verified sighting. Drives
+     *  the [LastSeenTtlMs] TTL: probes stop after this window of
+     *  silence to bound the leak if the IP got recycled. */
+    val lastSeenAt: Long = 0L,
 )
 
 enum class ThemeMode { System, Light, Dark }
@@ -187,8 +195,13 @@ private const val RECORD_SEP = "\n"
 
 internal fun encodePinned(map: Map<String, PinnedPeer>): String =
     map.values.joinToString(RECORD_SEP) { p ->
-        listOf(p.fingerprint, p.ed25519PubHex, p.label, p.pinnedAt.toString())
-            .joinToString(FIELD_SEP) { it.replace(FIELD_SEP, " ").replace(RECORD_SEP, " ") }
+        // Fields are positional: fingerprint, pubkey hex, label, pinnedAt,
+        // lastSeenAddr, lastSeenAt. New fields appended at the end so old
+        // records stay decodable.
+        listOf(
+            p.fingerprint, p.ed25519PubHex, p.label, p.pinnedAt.toString(),
+            p.lastSeenAddr, p.lastSeenAt.toString(),
+        ).joinToString(FIELD_SEP) { it.replace(FIELD_SEP, " ").replace(RECORD_SEP, " ") }
     }
 
 internal fun decodePinned(s: String?): Map<String, PinnedPeer> {
@@ -204,7 +217,14 @@ internal fun decodePinned(s: String?): Map<String, PinnedPeer> {
             ed25519PubHex = parts[1],
             label = parts[2],
             pinnedAt = parts[3].toLongOrNull() ?: 0L,
+            lastSeenAddr = parts.getOrNull(4).orEmpty(),
+            lastSeenAt = parts.getOrNull(5)?.toLongOrNull() ?: 0L,
         )
     }
     return out
 }
+
+/** Pinned peers' LastSeenAddr stays usable for unicast probing for
+ *  this long; older sightings are skipped to bound the leak when an
+ *  IP got recycled. 7 days. */
+const val LastSeenTtlMs: Long = 7L * 24L * 60L * 60L * 1000L
