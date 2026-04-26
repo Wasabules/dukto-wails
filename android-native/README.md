@@ -11,11 +11,12 @@ The Qt build keeps shipping until this port replaces it for real users. Goal onc
 
 ## Why the rewrite
 
-- APK size: ~22 MB → **~5–6 MB release / ~9–11 MB debug** (no Qt6 + QtQuick + Quick Controls bundled).
+- APK size: ~22 MB → **~6–8 MB release / ~10–12 MB debug** (no Qt6 + QtQuick + Quick Controls bundled, even with the v2 crypto stack added).
 - Material 3 with the **Dukto brand palette** (fixed `#248b00` green; Material You dynamic colors disabled on purpose so peers look consistent across devices) + edge-to-edge / predictive back / proper insets.
 - Storage Access Framework (SAF) for the destination directory and the share-with-Dukto flow — files land in a folder visible from any file manager.
 - Foreground service (`FOREGROUND_SERVICE_DATA_SYNC`) for in-flight transfers — Doze-friendly, survives backgrounding.
-- Native runtime permissions (`POST_NOTIFICATIONS` on Android 13+, etc.).
+- Native runtime permissions (`POST_NOTIFICATIONS` on Android 13+, `CAMERA` on demand for QR pair, etc.).
+- **Encrypted overlay (v2)** — Noise XX over TCP, 5-word EFF passphrase pairing, biometric unlock at app launch. See [`../docs/SECURITY_v2.md`](../docs/SECURITY_v2.md).
 - First-class Android Studio profiler / layout inspector / tracing.
 - Lets us delete the Qt-Android tree once parity is confirmed.
 
@@ -25,6 +26,7 @@ The Qt build keeps shipping until this port replaces it for real users. Goal onc
 - Jetpack Compose (BOM 2024.12) + Material 3 + Coil 2.7 (image loading).
 - `compileSdk = 36`, `minSdk = 24` (Android 7.0+), `targetSdk = 36`.
 - JVM toolchain 17.
+- Crypto stack: BouncyCastle (X25519, ChaCha20-Poly1305 primitives), `net.i2p.crypto:eddsa` (Ed25519 sign/verify on API 24+), `androidx.security:security-crypto` (`EncryptedFile` for the long-term identity keystore-backed at rest), ZXing (QR encode/decode for the pairing flow).
 
 ## First-time setup
 
@@ -81,11 +83,22 @@ android-native/
 ## Status — what's in vs not yet
 
 ### Wire format
-- ✅ `protocol`: `BuddyMessage` encode/decode (UDP datagrams 0x01–0x05).
+- ✅ `protocol`: `BuddyMessage` encode/decode (UDP datagrams `0x01..0x05` legacy + `0x06..0x07` v2 with embedded Ed25519 pubkey + signature).
 - ✅ `protocol`: `SessionHeader` + `ElementHeader` streaming codec (TCP).
 - ✅ `protocol`: `buildSignature("<user> at <host> (Android)")`.
-- ✅ JVM round-trip + invalid-input tests (18/18 — covers Qt-compatible rejection rules).
+- ✅ JVM round-trip + invalid-input tests (covers Qt-compatible rejection rules + v2 truncation / signature tampering).
 - ⏳ Cross-stack fixture tests: feed the `.bin` fixtures the Go side will eventually generate. Left for follow-up once Qt fixture generator runs in CI.
+
+### v2 encrypted overlay
+- ✅ `identity`: long-term Ed25519 keypair, `EncryptedFile` (AES-256-GCM, MasterKey from AndroidKeyStore — hardware-backed where TEE/StrongBox is available). X25519 derivation from the Ed25519 seed; Edwards-to-Montgomery projection for cross-binding.
+- ✅ `tunnel`: hand-rolled Noise XX (X25519 / ChaCha20-Poly1305 / SHA-256) using BouncyCastle primitives, with XXpsk2 mode for first-pairing. 8-byte magic prefix `DKTOv2\x00\x00`. Cross-stack tested against `flynn/noise` on the Wails side.
+- ✅ `eff`: bundled EFF Short Wordlist 1 (1296 words), 5-word passphrase generator + HKDF-SHA256 PSK derivation. Known-vector test pinned to the Wails side.
+- ✅ TOFU pinning persisted in `SharedPreferences`. PSK pairing auto-pins both sides on success.
+- ✅ TOFU mismatch detector (handshake-time and IP-rotation-time, both surface the same modal).
+- ✅ RefuseCleartext mode: drops every legacy session and every unpaired-v2 session.
+- ✅ HideFromDiscovery (stealth) + paired-peer probe loop: paired peers stay reachable via unicast HELLO even when broadcast is off.
+- ✅ Pair UI: generate code (5-word + QR) / enter code (text + camera scan via `zxing-android-embedded`).
+- ✅ Biometric unlock at app launch (`androidx.biometric`).
 
 ### Networking
 - ✅ `discovery.Messenger`: HELLO/GOODBYE, self-echo suppression, periodic broadcast, `WifiManager.MulticastLock`, GOODBYE on stop, unicast reply on broadcast.

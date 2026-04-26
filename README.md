@@ -1,11 +1,12 @@
 # Dukto
 
-Dukto is an easy file transfer tool for LAN. It was created by Emanuele Colombo, ported to Qt 5/6 by [xuzhen and other contributors](https://github.com/xuzhen/dukto/graphs/contributors), and this fork adds a Wails v2 / Go / Svelte-TS rewrite of the **desktop** frontend and a Kotlin / Jetpack Compose rewrite of the **Android** app.
+Dukto is an easy file transfer tool for LAN. It was created by Emanuele Colombo, ported to Qt 5/6 by [xuzhen and other contributors](https://github.com/xuzhen/dukto/graphs/contributors), and this fork adds a Wails v2 / Go / Svelte-TS rewrite of the **desktop** frontend, a Kotlin / Jetpack Compose rewrite of the **Android** app, **and an opt-in encrypted overlay (v2)** that runs Noise XX over the legacy wire format while staying interoperable with v1 peers.
 
 Now it supports Windows, Linux, MacOS and Android.
 
 ## Warning
-Dukto transfers files and text without encryption and is only designed for use in trusted network environments.
+
+The legacy v1 wire format transfers files and text **in cleartext** and is only designed for use in trusted network environments. The Wails port and the native Android app (this fork's `wails/` and `android-native/` trees) ship a **v2 encrypted overlay** documented in [`docs/SECURITY_v2.md`](docs/SECURITY_v2.md): once two peers have paired (via a one-shot 5-word EFF passphrase or by trusting a fingerprint), every subsequent transfer between them runs over Noise XX (X25519 / ChaCha20-Poly1305 / SHA-256). v1 peers (Qt original, third-party clients) keep working unchanged — the overlay only kicks in between two v2-capable peers, and only after explicit user pairing.
 
 ## Repo layout
 
@@ -25,18 +26,38 @@ The native Android APK uses `applicationId = dev.wasabules.dukto`, distinct from
 
 | | |
 |---|---|
-| **Current version** | 6.2.0 (see `version.h`) |
+| **Current version** | 6.4.0 (see `version.h`) |
 | **Supported OS** | Windows 10+, macOS 11+, Linux, Android 7.0+ (native APK) / Android 8.0+ (Qt6 APK) / Android 5.0+ (Qt5 APK) |
 | **Network** | IPv4 only, UDP + TCP on port `4644` (configurable); avatar HTTP on `udp_port + 1` |
-| **Encryption** | None — trusted LAN only |
-| **Discovery** | UDP broadcast on every up IPv4 non-loopback interface |
-| **Wire format** | Little-endian, framed per datagram / per element. See `docs/PROTOCOL.md`. |
+| **Encryption (v1)** | None — trusted LAN only |
+| **Encryption (v2)** | Noise XX over TCP (X25519 + ChaCha20-Poly1305 + SHA-256) once two peers are paired. Bootstrap: 5-word EFF passphrase + Noise XXpsk2, or manual TOFU pin. Mutual fingerprint authentication, forward secrecy via ephemeral keys. See [`docs/SECURITY_v2.md`](docs/SECURITY_v2.md). |
+| **Discovery** | UDP broadcast on every up IPv4 non-loopback interface; types `0x01..0x05` (v1) and `0x06..0x07` (v2 capability + Ed25519 identity). |
+| **Wire format** | Little-endian, framed per datagram / per element. See [`docs/PROTOCOL.md`](docs/PROTOCOL.md). |
 | **Settings store (Qt)** | `QSettings` under `msec.it/Dukto` (registry / plist / `~/.config/msec.it/Dukto.conf`) |
 | **Settings store (Wails)** | JSON under `<UserConfigDir>/dukto/` — one-time migration from the Qt store on first run |
 | **Settings store (Android native)** | `SharedPreferences` (`dukto.xml`) under the app's data dir; receive destination tree URI persisted via `takePersistableUriPermission` |
 | **Runtime deps (Qt desktop)** | Qt 5.3+ or Qt 6.x; libnotify (optional, Linux) |
 | **Runtime deps (Wails)** | WebView2 (Windows), WebKitGTK 4.1 (Linux), WKWebView (macOS, system-provided) |
 | **Runtime deps (Android native)** | None beyond the OS — pure-Kotlin, no NDK |
+
+## Encrypted overlay (v2) at a glance
+
+The Wails desktop and the native Android app ship an **opt-in** encrypted overlay that piggy-backs on the existing wire format. Nothing is encrypted by default — the user explicitly pairs each peer first.
+
+| Step | What happens |
+|---|---|
+| Identity | Each install generates a long-term **Ed25519 keypair** at first launch. Persisted at file mode 0600 (Wails) or AES-256-GCM `EncryptedFile` backed by AndroidKeyStore (Android). User-visible **fingerprint**: 16-char base32 `XXXX-XXXX-XXXX-XXXX`. |
+| Discovery | UDP HELLO `0x06`/`0x07` adds the Ed25519 pubkey + a signature over `port \|\| signature_string`. Legacy peers (Qt original, third-party) ignore types ≥ `0x06` silently — interop preserved. |
+| Pairing | One-shot **5-word EFF passphrase** (~52 bits, e.g. `apple-tiger-river-ocean-music`); HKDF-SHA256 derives a 32-byte PSK; **Noise XXpsk2** authenticates both sides mutually before either pin commits. QR-code variant available; Android can scan, Wails generates. |
+| TOFU fallback | Manual "Trust fingerprint as-is" with a warning modal explaining the first-contact MitM trade-off. |
+| Mismatch detection | If a previously-pinned peer's identity changes (legitimate reinstall *or* impersonation attempt), the session is killed and an "Identity changed" modal asks the user to re-pair or unpin. |
+| Transport | **Noise XX** static keypair = X25519 derived from the Ed25519 seed. Cipher: **ChaCha20-Poly1305**, hash: **SHA-256** — same suite as WireGuard. Forward secrecy via ephemeral keys. The legacy `SessionHeader`/`ElementHeader` stream is wrapped inside Noise transport messages once the handshake completes. |
+| Stealth mode | "Hide me from network discovery" toggle suppresses every outbound HELLO. **Paired peers stay reachable**: the auto-reply path bypasses stealth for inbound `0x06`/`0x07` whose Ed25519 fingerprint is in the local TOFU table, and the unicast probe loop folds in pinned peers' last-known IPs (TTL 7 days). Strangers see nothing. |
+| Manual peers | Cross-subnet IPs (or VPN endpoints) can be added by hand and get the same unicast HELLO poke as paired peers. |
+| Refuse cleartext | Per-peer setting that blocks every legacy and every unpaired-v2 session; only mutually paired peers can communicate. |
+| Audit | Every accept / reject / pair / mismatch decision lands in an append-only audit log (10 MiB rotation, mode 0600), viewable in Settings. |
+
+The v2 layer is fully described in [`docs/SECURITY_v2.md`](docs/SECURITY_v2.md), including the threat model, exact wire layout for the new HELLO types, and the Noise handshake flow.
 
 ## Feature comparison — Desktop (Qt6 ↔ Wails port)
 
@@ -73,6 +94,15 @@ The native Android APK uses `applicationId = dev.wasabules.dukto`, distinct from
 | Single-instance enforcement                           | ✅ (`SingleApplication`) | ✅ (Wails `SingleInstanceLock`) |
 | Windows taskbar progress (`ITaskbarList3`)            | ✅              | ⏳ not yet ported             |
 | Android target                                        | ✅              | ❌ out of scope               |
+| **v2 — UDP capability advertise (`0x06`/`0x07`)**     | ❌              | ✅                            |
+| **v2 — Persistent Ed25519 identity + fingerprint**    | ❌              | ✅                            |
+| **v2 — PSK pairing (5-word EFF + XXpsk2)**            | ❌              | ✅ (with QR generator)        |
+| **v2 — Manual TOFU pin (with warning modal)**         | ❌              | ✅                            |
+| **v2 — Noise XX encrypted transfers**                 | ❌              | ✅                            |
+| **v2 — TOFU mismatch detection (handshake + IP rotation)** | ❌         | ✅                            |
+| **v2 — Refuse cleartext mode**                        | ❌              | ✅                            |
+| **v2 — Hide from network discovery (stealth)**        | ❌              | ✅                            |
+| **v2 — Paired-peer probe loop (stealth-friendly)**    | ❌              | ✅                            |
 
 The Wails port is the long-term desktop frontend; the Qt tree will be pared down to Android-only once the Wails builds replace the Qt desktop builds for real users. See `docs/PORT_SCOPE.md` for the transition plan.
 
@@ -102,11 +132,22 @@ The Wails port is the long-term desktop frontend; the Qt tree will be pared down
 | Max session size                                      | ❌                 | ✅                            |
 | Audit log (1 MiB rotated, viewable in Settings)      | ❌                 | ✅                            |
 | Cancel transfer mid-session                           | ❌                 | ✅                            |
+| Biometric unlock at app launch                        | ❌                 | ✅                            |
 | Wireless ADB pairing tested                           | n/a                | ✅                            |
+| Manual peers (cross-subnet IPs, VPN endpoints)       | ❌                 | ✅                            |
 | `compileSdk` / `minSdk` / `targetSdk`                 | (Qt-managed)       | 36 / 24 / 36                  |
-| APK size (release, unsigned)                          | ~22 MB (arm64-v8a) | ~5–6 MB                       |
-| APK size (debug-signed, single ABI)                   | ~22 MB             | ~9–11 MB                      |
+| APK size (release, unsigned)                          | ~22 MB (arm64-v8a) | ~6–8 MB                       |
+| APK size (debug-signed, single ABI)                   | ~22 MB             | ~10–12 MB                     |
 | Wire format compat with Qt / Wails peers              | ✅                 | ✅ (Kotlin port + JVM tests)  |
+| **v2 — UDP capability advertise (`0x06`/`0x07`)**     | ❌                 | ✅                            |
+| **v2 — Persistent Ed25519 identity + fingerprint**    | ❌                 | ✅                            |
+| **v2 — PSK pairing (5-word EFF + XXpsk2)**            | ❌                 | ✅ (with QR generator + scanner) |
+| **v2 — Manual TOFU pin (with warning modal)**         | ❌                 | ✅                            |
+| **v2 — Noise XX encrypted transfers**                 | ❌                 | ✅                            |
+| **v2 — TOFU mismatch detection**                      | ❌                 | ✅                            |
+| **v2 — Refuse cleartext mode**                        | ❌                 | ✅                            |
+| **v2 — Hide from network discovery (stealth)**        | ❌                 | ✅                            |
+| **v2 — Paired-peer probe loop (stealth-friendly)**    | ❌                 | ✅                            |
 
 The native APK has reached functional parity with the Qt one for the day-to-day flows (discover → send/receive text, files, folders, with thumbnails and a preview screen), and it ships extra security gates that mirror the Wails desktop. Once it's been used in the wild for a release cycle, the Qt-Android tree can be retired alongside the Qt-desktop tree (see [`docs/PORT_SCOPE.md`](docs/PORT_SCOPE.md)).
 
@@ -252,8 +293,8 @@ The Qt workflows have `paths-ignore` for `wails/**` and `android-native/**` so c
 1. Bump `version.h` (both the `#define VERSION_*` macros and the `VERSION=x.y.z` line read by `dukto.pro`) and commit.
 2. Tag the commit `vX.Y.Z` and push the tag:
    ```sh
-   git tag v6.2.0
-   git push origin v6.2.0
+   git tag v6.4.0
+   git push origin v6.4.0
    ```
 3. `release.yml` runs on the tag push: gates on `go test` + `svelte-check`, then builds in parallel:
    - Wails desktop (Linux / Windows / macOS)

@@ -1,14 +1,33 @@
 # Dukto Wire Protocol
 
-Reference specification of the over-the-wire protocol implemented by the current Qt6 Dukto application. This is the **interop contract**: any re-implementation (e.g. the planned Wails/Go port) must reproduce these bytes exactly, because existing Dukto peers on the LAN speak this format and nothing else.
+Reference specification of the over-the-wire protocol. This is the **interop contract**: any re-implementation must reproduce these bytes exactly, because existing Dukto peers on the LAN speak this format and nothing else.
 
-Authoritative sources in the codebase:
+This document covers **v1** — the always-cleartext baseline that every Dukto peer (Qt original, Wails port, native Android, third-party clients) understands. It is unchanged.
+
+The **v2 encrypted overlay** sits on top of v1 in a way that legacy peers don't even notice. It adds:
+
+- New UDP HELLO types **`0x06` / `0x07`** (`HELLO_PORT_KEY_BROADCAST` / `HELLO_PORT_KEY_UNICAST`). Same structure as `0x04` / `0x05` plus an embedded Ed25519 pubkey and a signature. v1 peers reject every datagram whose type byte is outside `0x01..0x05` (see §2.1) so they ignore these silently.
+- An 8-byte TCP magic prefix **`DKTOv2\x00\x00`** that, when present at the start of a TCP session, signals a Noise XX handshake will follow before the regular `SessionHeader`. v1 senders never write those bytes; v2 receivers peek the first 8 bytes, route to either the encrypted tunnel or the legacy parser, and replay the bytes in the legacy case so the v1 path sees an unmodified stream.
+
+The encrypted overlay only kicks in between two peers that have explicitly paired (5-word EFF passphrase + Noise XXpsk2, or manual TOFU pin). Authoritative spec for the v2 layer: [`SECURITY_v2.md`](SECURITY_v2.md).
+
+Authoritative sources in the codebase, **v1**:
 
 - `duktoprotocol.cpp` — port defaults, server setup, session orchestration.
 - `network/messenger.cpp`, `network/buddymessage.cpp` — UDP discovery.
 - `network/sender.cpp`, `network/receiver.cpp` — TCP transfer.
 - `network/filedata.cpp` — file list generation and relative-path naming.
 - `miniwebserver.cpp` — out-of-band avatar HTTP endpoint.
+- Wails Go port: `wails/internal/protocol/{discovery,transfer,protocol}.go` (round-trip-tested against the Qt encoding).
+- Native Android port: `android-native/app/src/main/kotlin/dev/wasabules/dukto/protocol/Protocol.kt` (same).
+
+Authoritative sources in the codebase, **v2 (encrypted overlay)**:
+
+- `wails/internal/tunnel/tunnel.go` — Noise XX state machine over `github.com/flynn/noise`, magic-prefix peek, transport framing.
+- `wails/internal/identity/identity.go` — Ed25519 keypair persistence, X25519 derivation, fingerprint computation, Edwards-to-Montgomery cross-binding.
+- `wails/internal/eff/eff.go` — bundled wordlist + HKDF-derived PSK.
+- `android-native/app/src/main/kotlin/dev/wasabules/dukto/tunnel/Tunnel.kt` — hand-rolled Noise XX mirror (BouncyCastle primitives + java.security ChaCha20-Poly1305).
+- `android-native/app/src/main/kotlin/dev/wasabules/dukto/identity/Identity.kt` and `eff/Eff.kt` — Android counterparts.
 
 If this document and the code ever diverge, the code wins and this file must be updated.
 
