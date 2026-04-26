@@ -22,6 +22,26 @@
   export let onPairChange: () => void = () => {};
   export let onLaunchPskPair: (p: Peer) => void = () => {};
 
+  // Single-open overflow menu — only one peer card's encryption menu is
+  // open at a time. Tracked by peerKey so the right pop closes when the
+  // user opens another. Used by the use:clickOutside Svelte action below.
+  let openMenuKey: string | null = null;
+  function toggleMenu(key: string) {
+    openMenuKey = openMenuKey === key ? null : key;
+  }
+  function closeMenu(key: string) {
+    if (openMenuKey === key) openMenuKey = null;
+  }
+  function clickOutside(node: HTMLElement, callback: () => void) {
+    function handler(e: MouseEvent) {
+      if (!node.contains(e.target as Node)) callback();
+    }
+    document.addEventListener('click', handler, true);
+    return {
+      destroy() { document.removeEventListener('click', handler, true); },
+    };
+  }
+
   async function togglePair(p: Peer) {
     if (!p.fingerprint) return;
     try {
@@ -102,24 +122,25 @@
                 on:click|stopPropagation={() => onToggleBroadcastPick(k)}
               />
             {/if}
-            <img src={avatarUrl(p)} alt="" on:error={hideBrokenAvatar} />
+            <img
+              src={avatarUrl(p)}
+              alt=""
+              class="avatar"
+              class:enc-paired={p.paired}
+              class:enc-pairable={p.v2Capable && !p.paired}
+              on:error={hideBrokenAvatar}
+            />
             <div class="who">
               <div class="name">
                 {peerLabel(p)}
                 {#if trusted}<span class="trust-badge" title="In allow-list">✓</span>{/if}
-                {#if p.v2Capable}
-                  <span
-                    class="enc-badge"
-                    class:paired={p.paired}
-                    title={p.paired
-                      ? `Paired — encrypted transfers · ${p.fingerprint}`
-                      : p.fingerprint
-                        ? `Supports encrypted transfers · click 🔑 to pair · ${p.fingerprint}`
-                        : 'Supports encrypted transfers'}
-                  >{p.paired ? '🔒' : '🔓'}</span>
-                {/if}
               </div>
               <div class="detail">{ps.host || p.address} · {ps.platform || '–'}</div>
+              {#if p.v2Capable}
+                <div class="enc-status" class:paired={p.paired} class:pairable={!p.paired}>
+                  {p.paired ? '🔒 Encrypted' : 'Encryption available'}
+                </div>
+              {/if}
             </div>
           </button>
           <div class="peer-actions">
@@ -138,20 +159,30 @@
               >＋</button>
             {/if}
             {#if p.v2Capable && p.fingerprint}
-              {#if !p.paired}
+              <div class="enc-menu" use:clickOutside={() => closeMenu(k)}>
                 <button
                   type="button"
                   class="mini ghost"
-                  title="Pair via 5-word code (Noise XXpsk2 — defeats first-contact MitM)"
-                  on:click|stopPropagation={() => onLaunchPskPair(p)}
-                >🤝</button>
-              {/if}
-              <button
-                type="button"
-                class="mini ghost"
-                title={p.paired ? 'Unpair (transfers fall back to cleartext)' : 'Trust this fingerprint as-is (no PSK — TOFU)'}
-                on:click|stopPropagation={() => togglePair(p)}
-              >{p.paired ? '🔓' : '🔑'}</button>
+                  title="Encryption options"
+                  on:click|stopPropagation={() => toggleMenu(k)}
+                >⋮</button>
+                {#if openMenuKey === k}
+                  <div class="menu-pop">
+                    {#if p.paired}
+                      <button type="button" on:click|stopPropagation={() => { closeMenu(k); togglePair(p); }}>
+                        Unpair
+                      </button>
+                    {:else}
+                      <button type="button" on:click|stopPropagation={() => { closeMenu(k); onLaunchPskPair(p); }}>
+                        Pair via 5-word code…
+                      </button>
+                      <button type="button" on:click|stopPropagation={() => { closeMenu(k); togglePair(p); }}>
+                        Trust fingerprint as-is
+                      </button>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
             {/if}
           </div>
           {#if prog}
@@ -264,15 +295,49 @@
     color: var(--accent-strong);
     font-weight: 700;
   }
-  .enc-badge {
-    display: inline-block;
-    margin-left: 4px;
-    font-size: 0.85rem;
-    cursor: help;
+  /* Encryption state communicated by an avatar ring + a status line
+     under the address, instead of bare emoji glyphs. */
+  img.avatar.enc-paired {
+    box-shadow: 0 0 0 2px var(--accent-strong);
   }
-  .enc-badge.paired {
-    color: var(--accent-strong);
+  img.avatar.enc-pairable {
+    box-shadow: 0 0 0 2px var(--warn, #d39e00);
   }
+  .enc-status {
+    font-size: 0.78rem;
+    margin-top: 2px;
+    color: var(--text-dim);
+  }
+  .enc-status.paired { color: var(--accent-strong); }
+  .enc-status.pairable { color: var(--warn, #d39e00); }
+
+  .enc-menu { position: relative; display: inline-block; }
+  .menu-pop {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 2px;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+    min-width: 180px;
+    padding: 4px 0;
+    z-index: 30;
+  }
+  .menu-pop button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    color: var(--text);
+    border: 0;
+    padding: 6px 12px;
+    font-size: 0.88rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .menu-pop button:hover { background: var(--code-bg); }
   .peer-progress {
     position: absolute;
     left: 6px;

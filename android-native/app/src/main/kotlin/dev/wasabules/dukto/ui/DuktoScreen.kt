@@ -22,13 +22,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -307,44 +314,106 @@ private fun PeerRow(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PeerAvatar(peer)
+            // Encryption state is communicated by a colored ring around the
+            // avatar (green = paired/encrypted, amber = pairable, none for
+            // v1 peers). No emojis on the row itself — the actions live in
+            // a single overflow menu so the card doesn't read like a row of
+            // mystery glyphs.
+            val ringColor = when {
+                paired -> MaterialTheme.colorScheme.primary
+                peer.v2Capable -> MaterialTheme.colorScheme.tertiary
+                else -> Color.Transparent
+            }
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .border(
+                        width = if (ringColor == Color.Transparent) 0.dp else 2.dp,
+                        color = ringColor,
+                        shape = CircleShape,
+                    )
+                    .padding(if (ringColor == Color.Transparent) 0.dp else 3.dp),
+            ) {
+                PeerAvatar(peer)
+            }
             Spacer(Modifier.size(16.dp))
             Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        peer.signature,
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    if (peer.v2Capable) {
-                        Spacer(Modifier.size(6.dp))
-                        Text(
-                            if (paired) "🔒" else "🔓",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                }
+                Text(
+                    peer.signature,
+                    style = MaterialTheme.typography.titleMedium,
+                )
                 Text(
                     peer.address.hostAddress.orEmpty(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (peer.v2Capable && peer.fingerprint.isNotEmpty()) {
+                if (peer.v2Capable) {
+                    val statusLabel = if (paired) "🔒 Encrypted" else "Encryption available"
+                    val statusColor = if (paired)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.tertiary
                     Text(
-                        peer.fingerprint,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        statusLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = statusColor,
+                    )
+                    if (peer.fingerprint.isNotEmpty()) {
+                        Text(
+                            peer.fingerprint,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            if (onStartPskPair != null || onTogglePair != null) {
+                PeerActionMenu(
+                    paired = paired,
+                    onStartPskPair = onStartPskPair,
+                    onTogglePair = onTogglePair,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Single overflow button replacing the previous 🤝 + 🔑 IconButton stack.
+ * Items have explicit text labels so the action is obvious — no more
+ * three-emoji-row guessing game.
+ */
+@Composable
+private fun PeerActionMenu(
+    paired: Boolean,
+    onStartPskPair: (() -> Unit)?,
+    onTogglePair: (() -> Unit)?,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) {
+            Icon(Icons.Default.MoreVert, contentDescription = "Encryption options")
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            if (paired) {
+                if (onTogglePair != null) {
+                    DropdownMenuItem(
+                        text = { Text("Unpair") },
+                        onClick = { open = false; onTogglePair() },
                     )
                 }
-            }
-            if (onStartPskPair != null) {
-                IconButton(onClick = onStartPskPair) {
-                    Text("🤝", style = MaterialTheme.typography.bodyLarge)
+            } else {
+                if (onStartPskPair != null) {
+                    DropdownMenuItem(
+                        text = { Text("Pair via 5-word code…") },
+                        onClick = { open = false; onStartPskPair() },
+                    )
                 }
-            }
-            if (onTogglePair != null) {
-                IconButton(onClick = onTogglePair) {
-                    Text(if (paired) "🔓" else "🔑", style = MaterialTheme.typography.bodyLarge)
+                if (onTogglePair != null) {
+                    DropdownMenuItem(
+                        text = { Text("Trust fingerprint as-is") },
+                        onClick = { open = false; onTogglePair() },
+                    )
                 }
             }
         }
