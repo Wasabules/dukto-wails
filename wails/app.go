@@ -75,8 +75,11 @@ type App struct {
 	// modeMu guards lastSessionEncrypted — set right after a Server.Upgrade
 	// hook runs, read by handleReceiveEvent so the audit log can stamp the
 	// session with kind=ENCRYPTED vs CLEARTEXT. Reset on session end.
+	// Also guards pendingPair, the in-flight v2 pairing PSK; consuming it
+	// is a one-shot operation that the upgrade hook does atomically.
 	modeMu               sync.Mutex
 	lastSessionEncrypted bool
+	pendingPair          *pendingPairing
 }
 
 // NewApp creates the App and loads persistent settings. If loading fails

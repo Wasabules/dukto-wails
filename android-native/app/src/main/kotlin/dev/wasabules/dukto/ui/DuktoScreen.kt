@@ -106,9 +106,14 @@ fun DuktoScreen(
     /** Pin/unpin callbacks; null disables the trust button. */
     onPinPeer: ((Peer) -> Unit)? = null,
     onUnpinPeer: ((String) -> Unit)? = null,
+    /** PSK pairing flow callbacks; null disables the 🤝 button. */
+    onStartPairing: (() -> String)? = null,
+    onCancelPairing: (() -> Unit)? = null,
+    onPairWithPassphrase: ((Peer, String) -> Result<Unit>)? = null,
 ) {
     var settingsOpen by remember { mutableStateOf(false) }
     var sendSheetPeer by remember { mutableStateOf<Peer?>(null) }
+    var pairingPeer by remember { mutableStateOf<Peer?>(null) }
 
     Scaffold(
         topBar = {
@@ -178,6 +183,12 @@ fun DuktoScreen(
                                     if (paired) onUnpinPeer?.invoke(peer.fingerprint)
                                     else onPinPeer?.invoke(peer)
                                 }
+                            } else null,
+                            onStartPskPair = if (
+                                !paired && peer.v2Capable && peer.fingerprint.isNotEmpty() &&
+                                onStartPairing != null && onPairWithPassphrase != null
+                            ) {
+                                { pairingPeer = peer }
                             } else null,
                         )
                     }
@@ -249,6 +260,22 @@ fun DuktoScreen(
         pendingPeerRequests.firstOrNull()?.let { req ->
             PendingPeerDialog(request = req, onChoice = onResolvePeerRequest)
         }
+
+        pairingPeer?.let { p ->
+            val gen = onStartPairing
+            val sub = onPairWithPassphrase
+            if (gen != null && sub != null) {
+                PairingDialog(
+                    peerLabel = p.signature,
+                    onGenerate = gen,
+                    onSubmitCode = { code -> sub(p, code) },
+                    onCancel = {
+                        onCancelPairing?.invoke()
+                        pairingPeer = null
+                    },
+                )
+            }
+        }
     }
 }
 
@@ -260,6 +287,7 @@ private fun PeerRow(
     paired: Boolean = false,
     onClick: () -> Unit,
     onTogglePair: (() -> Unit)? = null,
+    onStartPskPair: (() -> Unit)? = null,
 ) {
     Card(
         modifier = Modifier
@@ -300,6 +328,11 @@ private fun PeerRow(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+            }
+            if (onStartPskPair != null) {
+                IconButton(onClick = onStartPskPair) {
+                    Text("🤝", style = MaterialTheme.typography.bodyLarge)
                 }
             }
             if (onTogglePair != null) {
@@ -393,6 +426,13 @@ private fun ActivityRow(entry: ActivityEntry, onClick: () -> Unit) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (entry.encrypted) {
+                    Text(
+                        "🔒",
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                    )
+                }
                 Text(time, style = MaterialTheme.typography.labelSmall)
             }
 

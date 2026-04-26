@@ -42,12 +42,13 @@ func Clear(store *settings.Store) error {
 // bulk load and the incremental append event.
 func Payload(it settings.HistoryItem) map[string]any {
 	return map[string]any{
-		"kind": it.Kind,
-		"name": it.Name,
-		"path": it.Path,
-		"text": it.Text,
-		"at":   it.At.UnixMilli(),
-		"from": it.From,
+		"kind":      it.Kind,
+		"name":      it.Name,
+		"path":      it.Path,
+		"text":      it.Text,
+		"at":        it.At.UnixMilli(),
+		"from":      it.From,
+		"encrypted": it.Encrypted,
 	}
 }
 

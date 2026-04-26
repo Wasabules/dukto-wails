@@ -135,6 +135,8 @@ class DuktoEngine(private val app: Context) {
             // event handler can stamp the entry correctly.
             lastSessionEncrypted = encrypted
         },
+        pendingPskProvider = { consumePairingPsk() },
+        onPskHandshake = { addr, x25519 -> autoPinFromX25519(addr, x25519) },
     )
     private val sender = Sender(
         context = app,
@@ -273,6 +275,106 @@ class DuktoEngine(private val app: Context) {
         val pub = messenger.peers.value.values.firstOrNull { it.address == addr }?.pubKey ?: return false
         val fp = dev.wasabules.dukto.identity.fingerprintOf(pub)
         return settings.state.value.pinnedPeers.containsKey(fp)
+    }
+
+    // ── PSK pairing flow ────────────────────────────────────────────────
+
+    /** One-shot PSK armed by [startPairing]. Cleared on first
+     *  consumption or after [PAIRING_TTL_MS]. */
+    @Volatile private var pendingPsk: ByteArray? = null
+    @Volatile private var pendingPskExpiresAt: Long = 0L
+
+    /**
+     * Generate a 5-word EFF passphrase, derive the 32-byte PSK, and arm
+     * the responder side for the next [PAIRING_TTL_MS] milliseconds.
+     * The passphrase is returned for the user to read out / share; the
+     * derived PSK never leaves the process.
+     */
+    fun startPairing(): String {
+        val phrase = dev.wasabules.dukto.eff.Eff.generate(app, n = 5)
+        pendingPsk = dev.wasabules.dukto.eff.Eff.derivePSK(phrase)
+        pendingPskExpiresAt = System.currentTimeMillis() + PAIRING_TTL_MS
+        return phrase
+    }
+
+    /** Clear any in-flight pairing without consuming it. */
+    fun cancelPairing() {
+        pendingPsk = null
+        pendingPskExpiresAt = 0
+    }
+
+    /** Consume the armed PSK atomically. Returns null when none is set
+     *  or when the TTL has expired. Used by [Server] on each handshake. */
+    private fun consumePairingPsk(): ByteArray? {
+        val now = System.currentTimeMillis()
+        val psk = pendingPsk
+        if (psk == null || now > pendingPskExpiresAt) {
+            pendingPsk = null
+            return null
+        }
+        pendingPsk = null
+        return psk
+    }
+
+    /**
+     * Initiator-side counterpart of [startPairing]: dial the peer over
+     * TCP, send the v2 magic, and run a Noise XXpsk2 handshake. The
+     * remote_static is auto-pinned on success; on failure (mismatched
+     * passphrase, TTL expired, etc.) nothing is persisted.
+     */
+    fun pairWithPassphrase(addr: java.net.InetAddress, port: Int, passphrase: String) {
+        val identity = identity ?: error("v2 identity unavailable")
+        val psk = dev.wasabules.dukto.eff.Eff.derivePSK(passphrase)
+        val sock = java.net.Socket()
+        sock.connect(java.net.InetSocketAddress(addr, port), 5_000)
+        sock.tcpNoDelay = true
+        try {
+            val session = dev.wasabules.dukto.tunnel.handshake(
+                sock.getInputStream(), sock.getOutputStream(),
+                dev.wasabules.dukto.tunnel.HandshakeRole.Initiator,
+                identity.x25519Private(), identity.x25519Public(),
+                psk = psk,
+                closer = {},
+            )
+            autoPinFromX25519(addr, session.remoteStatic)
+            // Send a 0-byte text element so the responder gets a clean
+            // SessionStart/Done flow and the audit log records the pair.
+            val out = java.io.BufferedOutputStream(SenderSessionOutput(session))
+            dev.wasabules.dukto.protocol.writeSessionHeader(
+                out, dev.wasabules.dukto.protocol.SessionHeader(1, 0)
+            )
+            dev.wasabules.dukto.protocol.writeElementHeader(
+                out, dev.wasabules.dukto.protocol.ElementHeader(
+                    dev.wasabules.dukto.protocol.TEXT_ELEMENT_NAME, 0
+                )
+            )
+            out.flush()
+            session.close()
+        } finally {
+            runCatching { sock.close() }
+        }
+    }
+
+    /** Resolve a peer InetAddress to the X25519 expected from its
+     *  advertised Ed25519 pubkey, then pin if it matches. Used by
+     *  both pairing paths. */
+    private fun autoPinFromX25519(addr: java.net.InetAddress, x25519: ByteArray) {
+        val pub = messenger.peers.value.values.firstOrNull { it.address == addr }?.pubKey
+            ?: return
+        val expected = dev.wasabules.dukto.identity.ed25519PubToX25519Pub(pub) ?: return
+        if (!expected.contentEquals(x25519)) return
+        val fp = dev.wasabules.dukto.identity.fingerprintOf(pub)
+        val sig = messenger.peers.value.values.firstOrNull { it.address == addr }?.signature.orEmpty()
+        settings.update {
+            it.copy(
+                pinnedPeers = it.pinnedPeers + (fp to dev.wasabules.dukto.settings.PinnedPeer(
+                    fingerprint = fp,
+                    ed25519PubHex = hexEncode(pub),
+                    label = sig,
+                    pinnedAt = System.currentTimeMillis(),
+                )),
+            )
+        }
     }
 
     fun setMaxActivityEntries(n: Int) {
@@ -438,7 +540,20 @@ class DuktoEngine(private val app: Context) {
     private companion object {
         const val NOTIF_MAX = 1000
         const val AVATAR_PX = 64
+        const val PAIRING_TTL_MS = 60_000L
     }
+}
+
+/** OutputStream adapter exposing a [tunnel.Session]'s write() so the
+ *  pairing flow can reuse the legacy SessionHeader writer. Mirrors the
+ *  internal helper in transfer/Transfer.kt — kept private here to avoid
+ *  exposing the wrapper as part of the engine's public surface. */
+private class SenderSessionOutput(
+    private val s: dev.wasabules.dukto.tunnel.Session,
+) : java.io.OutputStream() {
+    override fun write(b: Int) { s.write(byteArrayOf((b and 0xFF).toByte())) }
+    override fun write(b: ByteArray, off: Int, len: Int) { s.write(b, off, len) }
+    override fun close() = s.close()
 }
 
 private fun hexEncode(b: ByteArray): String =

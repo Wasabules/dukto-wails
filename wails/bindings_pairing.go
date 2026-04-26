@@ -1,18 +1,22 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
 	"net"
+	"net/netip"
 	"sort"
 	"strings"
 	"time"
 
 	"dukto/internal/audit"
+	"dukto/internal/eff"
 	"dukto/internal/identity"
+	"dukto/internal/protocol"
 	"dukto/internal/settings"
 	"dukto/internal/tunnel"
 )
@@ -22,6 +26,11 @@ import (
 // Noise XX responder when they match the v2 magic; otherwise it returns
 // the peeked-but-replayed conn so the legacy SessionHeader parser sees an
 // unchanged byte stream.
+//
+// When a pairing session is in flight (StartPairing called within the
+// last 30 seconds with a generated PSK), the handshake runs Noise XXpsk2
+// instead of plain XX so a first-contact peer can authenticate us via
+// the shared one-shot passphrase.
 func (a *App) upgradeServerConn(conn net.Conn) (net.Conn, bool, error) {
 	if a.identity.Public == nil {
 		// No long-term identity loaded — we can't do v2 anyway, so always
@@ -39,20 +48,187 @@ func (a *App) upgradeServerConn(conn net.Conn) (net.Conn, bool, error) {
 	}
 
 	priv, pub := a.identity.X25519Private(), mustX25519Pub(a.identity)
-	sess, err := tunnel.Handshake(&peeked, tunnel.RoleResponder, priv, pub, nil)
+	psk := a.consumePairingPSK()
+	sess, err := tunnel.Handshake(&peeked, tunnel.RoleResponder, priv, pub, psk)
 	if err != nil {
 		return nil, false, fmt.Errorf("v2 handshake: %w", err)
 	}
-	// Trust gate: session is encrypted but the remote_static must match a
-	// pinned peer. The Allow callback already audits unknown / blocked
-	// peers; this layer adds the second gate "v2 session from a peer we
-	// haven't pinned yet". We let the session through (pinning can happen
-	// from the UI after this exchange) and emit an audit entry capturing
-	// who connected so the user can decide.
+	// Pairing branch: when the handshake used a PSK, automatically pin
+	// the peer's identity. The PSK already proved both sides know the
+	// passphrase, so the remote_static is trustworthy at this point.
 	remote := sess.RemoteStatic()
+	if psk != nil {
+		_ = a.autoPinFromX25519(conn.RemoteAddr(), remote)
+	}
 	a.recordEncryptedHandshake(conn.RemoteAddr(), remote)
 	return sess, true, nil
 }
+
+// ── pairing flow ─────────────────────────────────────────────────────────
+
+// pairingTTL is how long a generated passphrase stays armed on the
+// "responder" side. After expiry the PSK is discarded and the handshake
+// falls back to plain XX. Long enough to give the user time to read the
+// words out and type them in; short enough that a forgotten flow can't
+// linger as a permanent low-entropy backdoor.
+const pairingTTL = 60 * time.Second
+
+// pendingPairing holds the responder-side PSK during an in-flight
+// pairing. Cleared on a successful handshake or after [pairingTTL].
+type pendingPairing struct {
+	psk     []byte
+	expires time.Time
+}
+
+// StartPairing generates a fresh 5-word EFF passphrase, derives the PSK,
+// and arms the server for the next [pairingTTL]. The passphrase is
+// returned for the user to read out / scan; the PSK never leaves the
+// process.
+func (a *App) StartPairing() (string, error) {
+	pass, err := eff.Generate(5)
+	if err != nil {
+		return "", err
+	}
+	psk, err := eff.DerivePSK(pass)
+	if err != nil {
+		return "", err
+	}
+	a.modeMu.Lock()
+	a.pendingPair = &pendingPairing{psk: psk, expires: time.Now().Add(pairingTTL)}
+	a.modeMu.Unlock()
+	return pass, nil
+}
+
+// CancelPairing clears any in-flight pairing PSK. Safe to call when no
+// pairing is active.
+func (a *App) CancelPairing() {
+	a.modeMu.Lock()
+	a.pendingPair = nil
+	a.modeMu.Unlock()
+}
+
+// consumePairingPSK returns the armed PSK and clears it atomically. Used
+// by the Server.Upgrade hook to feed the PSK into one handshake exactly.
+func (a *App) consumePairingPSK() []byte {
+	a.modeMu.Lock()
+	defer a.modeMu.Unlock()
+	pp := a.pendingPair
+	if pp == nil || time.Now().After(pp.expires) {
+		a.pendingPair = nil
+		return nil
+	}
+	a.pendingPair = nil
+	return pp.psk
+}
+
+// PairWithPassphrase is the initiator-side counterpart of [StartPairing]:
+// the user types the 5-word code; this function dials the peer and runs
+// Noise XXpsk2 with the same derived PSK. On success both peers have
+// pinned each other's long-term key in their TOFU table.
+func (a *App) PairWithPassphrase(addrPort, passphrase string) error {
+	if a.identity.Public == nil {
+		return errors.New("PairWithPassphrase: no v2 identity loaded")
+	}
+	psk, err := eff.DerivePSK(passphrase)
+	if err != nil {
+		return err
+	}
+	peer, err := parseAddrPort(addrPort)
+	if err != nil {
+		return err
+	}
+	priv, pub := a.identity.X25519Private(), mustX25519Pub(a.identity)
+	dialer := net.Dialer{Timeout: 5 * time.Second}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, err := dialer.DialContext(ctx, "tcp4", peer.String())
+	if err != nil {
+		return fmt.Errorf("dial %s: %w", peer, err)
+	}
+	defer conn.Close()
+	sess, err := tunnel.Handshake(conn, tunnel.RoleInitiator, priv, pub, psk)
+	if err != nil {
+		return fmt.Errorf("pair handshake: %w", err)
+	}
+	defer sess.Close()
+	// PSK match → both sides know the passphrase → remote_static is
+	// trustworthy. Pin it.
+	if err := a.autoPinFromX25519(conn.RemoteAddr(), sess.RemoteStatic()); err != nil {
+		return fmt.Errorf("pair pin: %w", err)
+	}
+	// Send a tiny "pair complete" sentinel so the responder's Receiver
+	// gets a clean session start/end and the audit log records the pair.
+	hdr := protocol.SessionHeader{TotalElements: 1, TotalSize: 0}
+	if err := sendPairingSentinel(sess, hdr); err != nil {
+		return fmt.Errorf("pair sentinel: %w", err)
+	}
+	return nil
+}
+
+// sendPairingSentinel writes a zero-byte text element through the Noise
+// session so the receiver sees a proper SessionHeader+ElementHeader+EOF
+// flow. Used as the "ack" that closes a pairing handshake.
+func sendPairingSentinel(sess *tunnel.Session, hdr protocol.SessionHeader) error {
+	if err := protocol.WriteSessionHeader(sess, hdr); err != nil {
+		return err
+	}
+	return protocol.WriteElementHeader(sess, protocol.ElementHeader{
+		Name: protocol.TextElementName,
+		Size: 0,
+	})
+}
+
+// autoPinFromX25519 records a peer's long-term identity in the TOFU
+// table after a PSK-authenticated handshake. The Ed25519 fingerprint is
+// recovered from the discovery messenger's verified peer table by
+// matching the X25519 → Ed25519 (via the Edwards-to-Montgomery
+// equivalence we verified at startup).
+func (a *App) autoPinFromX25519(remote net.Addr, x25519 []byte) error {
+	addrStr := ""
+	if udp, ok := remote.(*net.TCPAddr); ok {
+		addrStr = udp.IP.String()
+	} else {
+		addrStr = remote.String()
+		if i := strings.LastIndex(addrStr, ":"); i >= 0 {
+			addrStr = addrStr[:i]
+		}
+	}
+	pub, err := a.findPubKeyForAddress(addrStr)
+	if err != nil {
+		return fmt.Errorf("autoPin: %w", err)
+	}
+	expectedX, err := identity.Ed25519PubToX25519Pub(pub)
+	if err != nil || !bytesEqual(expectedX[:], x25519) {
+		return fmt.Errorf("autoPin: x25519 doesn't match advertised ed25519 for %s", addrStr)
+	}
+	fp := identity.Fingerprint(pub)
+	rec := settings.PinnedPeer{
+		Fingerprint:   fp,
+		Ed25519PubHex: hex.EncodeToString(pub),
+		Label:         a.labelForAddress(addrStr),
+		PinnedAt:      time.Now(),
+	}
+	if err := a.settings.Update(func(v *settings.Values) {
+		if v.PinnedPeers == nil {
+			v.PinnedPeers = map[string]settings.PinnedPeer{}
+		}
+		v.PinnedPeers[fp] = rec
+	}); err != nil {
+		return err
+	}
+	if a.audit != nil {
+		a.audit.Append(audit.Entry{
+			Time: time.Now(), Kind: "peer_pinned",
+			Peer: rec.Label, Reason: "psk-pairing/" + fp,
+		})
+	}
+	return nil
+}
+
+// _ silences the "unused netip" import when someone removes the
+// parseAddrPort helper later. parseAddrPort lives in bindings_peers.go
+// already, so keep the import linked here too.
+var _ = netip.AddrPort{}
 
 // senderUpgrade is the Sender.Upgrade hook used by bindings_files when
 // dialling a peer that the user has marked as pinned. Returns the raw

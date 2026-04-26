@@ -20,6 +20,7 @@
   export let onTrustPeer: (p: Peer) => void = () => {};
   export let onToggleBroadcastMode: (on: boolean) => void = () => {};
   export let onPairChange: () => void = () => {};
+  export let onLaunchPskPair: (p: Peer) => void = () => {};
 
   async function togglePair(p: Peer) {
     if (!p.fingerprint) return;
@@ -137,10 +138,18 @@
               >＋</button>
             {/if}
             {#if p.v2Capable && p.fingerprint}
+              {#if !p.paired}
+                <button
+                  type="button"
+                  class="mini ghost"
+                  title="Pair via 5-word code (Noise XXpsk2 — defeats first-contact MitM)"
+                  on:click|stopPropagation={() => onLaunchPskPair(p)}
+                >🤝</button>
+              {/if}
               <button
                 type="button"
                 class="mini ghost"
-                title={p.paired ? 'Unpair (transfers fall back to cleartext)' : 'Pair — pin this fingerprint to enable encrypted transfers'}
+                title={p.paired ? 'Unpair (transfers fall back to cleartext)' : 'Trust this fingerprint as-is (no PSK — TOFU)'}
                 on:click|stopPropagation={() => togglePair(p)}
               >{p.paired ? '🔓' : '🔑'}</button>
             {/if}

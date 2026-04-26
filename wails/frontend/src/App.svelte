@@ -91,6 +91,7 @@
   import type { ReceivedItem } from './components/ReceivedRow.svelte';
   import SettingsModal, { type SettingsTab } from './components/SettingsModal.svelte';
   import PreviewModal from './components/PreviewModal.svelte';
+  import PairingModal from './components/PairingModal.svelte';
   import PendingSessionModal from './components/PendingSessionModal.svelte';
   import ProgressStack from './components/ProgressStack.svelte';
   import Toast from './components/Toast.svelte';
@@ -162,6 +163,7 @@
   // Preview lightbox + settings modal state.
   let previewItem: ReceivedItem | null = null;
   let settingsOpen = false;
+  let pairingPeer: Peer | null = null;
   let settingsTab: SettingsTab = 'general';
   let qrData: string | null = null;
   $: if (settingsOpen && qrData === null) void loadQrCode();
@@ -960,6 +962,7 @@
     onRenamePeer={promptRenamePeer}
     onTrustPeer={trustPeer}
     onPairChange={refreshPeers}
+    onLaunchPskPair={(p) => (pairingPeer = p)}
     onToggleBroadcastMode={(on) => broadcastMode.set(on)}
   />
 
@@ -1089,6 +1092,10 @@
     onOpenExternal={openReceived}
     onReveal={revealReceived}
   />
+
+  {#if pairingPeer}
+    <PairingModal peer={pairingPeer} onClose={() => { pairingPeer = null; refreshPeers(); }} />
+  {/if}
 
   <Toast message={$toast} />
 </main>

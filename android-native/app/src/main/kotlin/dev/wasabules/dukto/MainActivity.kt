@@ -192,6 +192,11 @@ class MainActivity : FragmentActivity() {
                             }
                         },
                         onUnpinPeer = { fp -> engine.unpinPeer(fp) },
+                        onStartPairing = { engine.startPairing() },
+                        onCancelPairing = { engine.cancelPairing() },
+                        onPairWithPassphrase = { peer, code ->
+                            runCatching { engine.pairWithPassphrase(peer.address, peer.port, code) }
+                        },
                     )
                 }
             }

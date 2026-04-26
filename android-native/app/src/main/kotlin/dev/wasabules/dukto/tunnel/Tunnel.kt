@@ -267,13 +267,15 @@ internal class HandshakeState private constructor(
     private var msgIdx = 0
     val completed: Boolean get() = msgIdx >= 3
 
-    /** XX message tokens by message index, identical for both sides. */
+    /** XX message tokens by message index, identical for both sides.
+     *  XXpsk2 appends a `psk` token at the end of the second message
+     *  (index 1) — matches flynn/noise's PresharedKeyPlacement = 2 and
+     *  the canonical noise spec definition of "pskN means the psk token
+     *  is in the Nth message" (1-indexed). */
     private val patterns: List<List<String>> = listOf(
         listOf("e"),
-        listOf("e", "ee", "s", "es"),
-        // XX's third message is `s, se`. With XXpsk2 we prepend a `psk`
-        // token so the PSK is mixed before the static-key encryption.
-        if (psk == null) listOf("s", "se") else listOf("psk", "s", "se"),
+        if (psk == null) listOf("e", "ee", "s", "es") else listOf("e", "ee", "s", "es", "psk"),
+        listOf("s", "se"),
     )
 
     fun writeMessage(payload: ByteArray): ByteArray {
